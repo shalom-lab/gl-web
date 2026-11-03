@@ -14,6 +14,9 @@ import { GL_TRANSITIONS_CATALOG } from '../shaders/glTransitions';
 interface ShaderPresetPanelProps {
   presets: ShaderPreset[];
   activeTransitionId: string;
+  /** When true (default), applying a preset also restores its saved frame aspect. */
+  applyAspect: boolean;
+  onApplyAspectChange: (next: boolean) => void;
   onApply: (preset: ShaderPreset) => void;
   onDuplicate: (preset: ShaderPreset) => void;
   onRename: (preset: ShaderPreset) => void;
@@ -33,9 +36,21 @@ function timingHint(preset: ShaderPreset): string | null {
   return `${t.slideDuration.toFixed(1)}s + 转场 ${t.transitionDuration.toFixed(1)}s`;
 }
 
+function aspectHint(preset: ShaderPreset): string | null {
+  if (!preset.aspectRatio) return null;
+  if (preset.aspectRatio === 'original') return '原图';
+  if (preset.aspectRatio === 'custom') {
+    const a = preset.customAspect;
+    return a ? `自定义 ${a.w}:${a.h}` : '自定义';
+  }
+  return preset.aspectRatio;
+}
+
 export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
   presets,
   activeTransitionId,
+  applyAspect,
+  onApplyAspectChange,
   onApply,
   onDuplicate,
   onRename,
@@ -52,7 +67,7 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
           <Bookmark className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span className="shrink-0">我的预设</span>
           <span className="text-[10px] font-normal text-zinc-400 truncate">
-            转场 + 着色器 + 时长
+            转场 + 着色器 + 时长 + 画幅
           </span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -79,6 +94,17 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
         </div>
       </div>
 
+      <label className="flex items-center gap-1.5 px-0.5 text-[10px] text-zinc-600 cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={applyAspect}
+          onChange={(e) => onApplyAspectChange(e.target.checked)}
+          className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+        />
+        <span>覆盖当前画幅</span>
+        <span className="text-zinc-400">（应用预设时恢复 16:9 / 9:16 / 原图等）</span>
+      </label>
+
       <input
         ref={importInputRef}
         type="file"
@@ -93,13 +119,15 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
 
       {presets.length === 0 ? (
         <p className="text-[11px] text-zinc-400 leading-relaxed px-0.5">
-          暂无预设。调好转场 / 着色器 / 时长后，点底部「保存预设」；也可点「导入」加载 JSON。
+          暂无预设。调好转场 / 着色器 / 时长 / 画幅后，点底部「保存预设」；也可点「导入」加载
+          JSON。
         </p>
       ) : (
         <ul className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
           {presets.map((preset) => {
             const isActiveLike = preset.shaderSettings.transitionId === activeTransitionId;
             const timing = timingHint(preset);
+            const aspect = aspectHint(preset);
             return (
               <li
                 key={preset.id}
@@ -124,6 +152,7 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
                   </div>
                   <div className="text-[10px] text-zinc-400 truncate font-mono">
                     {transitionLabel(preset.shaderSettings.transitionId)}
+                    {aspect ? ` · ${aspect}` : ''}
                     {timing ? ` · ${timing}` : ''}
                   </div>
                 </button>

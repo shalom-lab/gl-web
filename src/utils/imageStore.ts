@@ -326,7 +326,7 @@ export async function saveAppPrefs(prefs: AppPrefsInput): Promise<void> {
 }
 
 
-/** User-saved transition + shader + timeline (时长) preset (no slides/images). */
+/** User-saved transition + shader + timeline + framing preset (no slides/images). */
 export interface ShaderPreset {
   id: string;
   name: string;
@@ -336,48 +336,99 @@ export interface ShaderPreset {
   shaderSettings: ShaderSettings;
   /** 时长 / 节奏设置（单张展示 + 转场时长 + loop）— 转场区上方的「时长设置」 */
   timelineSettings?: TimelineSettings;
+  /** Preview/export frame mode (16:9 / 9:16 / … / original / custom). */
+  aspectRatio?: AspectRatioPreset;
+  /** Integer a:b when aspectRatio === 'custom'. */
+  customAspect?: CustomAspect;
 }
 
 /** Clipboard / share payload for「复制配置」. */
 export interface ShaderConfigExport {
-  version: 1;
+  /** v2 adds optional aspectRatio + customAspect. */
+  version: 1 | 2;
   kind: 'gl-web-shader-config';
   exportedAt: string;
   shaderSettings: ShaderSettings;
   timelineSettings?: TimelineSettings;
+  aspectRatio?: AspectRatioPreset;
+  customAspect?: CustomAspect;
 }
 
 /** File payload for 导入 / 导出全部预设. */
 export interface ShaderPresetsFile {
-  version: 1;
+  /** v2 adds optional aspectRatio + customAspect per preset. */
+  version: 1 | 2;
   kind: 'gl-web-presets';
   exportedAt: string;
   presets: ShaderPreset[];
 }
 
+const ASPECT_PRESET_IDS: AspectRatioPreset[] = [
+  '16:9',
+  '9:16',
+  '3:4',
+  '4:3',
+  'original',
+  'custom'
+];
+
+export function sanitizeAspectRatioPreset(raw: unknown): AspectRatioPreset | undefined {
+  if (typeof raw !== 'string') return undefined;
+  // Legacy 1:1 → 16:9
+  if (raw === '1:1') return '16:9';
+  return (ASPECT_PRESET_IDS as string[]).includes(raw)
+    ? (raw as AspectRatioPreset)
+    : undefined;
+}
+
+function cloneCustomAspect(aspect: CustomAspect): CustomAspect {
+  return clampCustomAspect({ w: aspect.w, h: aspect.h });
+}
+
 export function buildShaderConfigExport(
   shaderSettings: ShaderSettings,
-  timelineSettings?: TimelineSettings
+  timelineSettings?: TimelineSettings,
+  aspectRatio?: AspectRatioPreset,
+  customAspect?: CustomAspect
 ): ShaderConfigExport {
+  const framingAspect = sanitizeAspectRatioPreset(aspectRatio);
   return {
-    version: 1,
+    version: 2,
     kind: 'gl-web-shader-config',
     exportedAt: new Date().toISOString(),
-    shaderSettings: { ...shaderSettings },
-    timelineSettings: timelineSettings ? { ...timelineSettings } : undefined
+    shaderSettings: cloneShaderSettings(shaderSettings),
+    timelineSettings: timelineSettings ? cloneTimelineSettings(timelineSettings) : undefined,
+    aspectRatio: framingAspect,
+    customAspect:
+      framingAspect === 'custom' && customAspect
+        ? cloneCustomAspect(customAspect)
+        : framingAspect === 'custom'
+          ? cloneCustomAspect(DEFAULT_CUSTOM_ASPECT)
+          : undefined
   };
 }
 
 export function buildPresetsExportFile(presets: ShaderPreset[]): ShaderPresetsFile {
   return {
-    version: 1,
+    version: 2,
     kind: 'gl-web-presets',
     exportedAt: new Date().toISOString(),
-    presets: presets.map((p) => ({
-      ...p,
-      shaderSettings: { ...p.shaderSettings },
-      timelineSettings: p.timelineSettings ? { ...p.timelineSettings } : undefined
-    }))
+    presets: presets.map((p) => {
+      const clean = sanitizePreset(p);
+      if (!clean) {
+        // Should not happen for in-memory presets; fall back to shallow-safe copy
+        return {
+          ...p,
+          shaderSettings: cloneShaderSettings(p.shaderSettings),
+          timelineSettings: p.timelineSettings
+            ? cloneTimelineSettings(p.timelineSettings)
+            : undefined,
+          aspectRatio: sanitizeAspectRatioPreset(p.aspectRatio),
+          customAspect: p.customAspect ? cloneCustomAspect(p.customAspect) : undefined
+        };
+      }
+      return clean;
+    })
   };
 }
 
@@ -393,13 +444,26 @@ function sanitizePreset(raw: unknown): ShaderPreset | null {
   if (!shader) return null;
   const createdAt = typeof r.createdAt === 'number' ? r.createdAt : Date.now();
   const updatedAt = typeof r.updatedAt === 'number' ? r.updatedAt : createdAt;
+  const aspectRatio = sanitizeAspectRatioPreset(r.aspectRatio);
+  const customAspect =
+    aspectRatio === 'custom'
+      ? clampCustomAspect(
+          r.customAspect && typeof r.customAspect === 'object'
+            ? (r.customAspect as CustomAspect)
+            : DEFAULT_CUSTOM_ASPECT
+        )
+      : r.customAspect && typeof r.customAspect === 'object'
+        ? clampCustomAspect(r.customAspect as CustomAspect)
+        : undefined;
   return {
     id: r.id,
     name: r.name.trim() || '未命名预设',
     createdAt,
     updatedAt,
     shaderSettings: shader,
-    timelineSettings: sanitizeTimelineSettings(r.timelineSettings)
+    timelineSettings: sanitizeTimelineSettings(r.timelineSettings),
+    aspectRatio,
+    customAspect: aspectRatio === 'custom' ? customAspect ?? cloneCustomAspect(DEFAULT_CUSTOM_ASPECT) : customAspect
   };
 }
 
@@ -476,20 +540,34 @@ function cloneTimelineSettings(settings: TimelineSettings): TimelineSettings {
   };
 }
 
-/** Create a new preset from current shader + timeline settings. */
+export interface CreateShaderPresetFraming {
+  aspectRatio?: AspectRatioPreset;
+  customAspect?: CustomAspect;
+}
+
+/** Create a new preset from current shader + timeline + framing settings. */
 export async function createShaderPreset(
   name: string,
   shaderSettings: ShaderSettings,
-  timelineSettings?: TimelineSettings
+  timelineSettings?: TimelineSettings,
+  framing?: CreateShaderPresetFraming
 ): Promise<ShaderPreset> {
   const now = Date.now();
+  const aspectRatio = sanitizeAspectRatioPreset(framing?.aspectRatio);
   const preset: ShaderPreset = {
     id: newPresetId(),
     name: name.trim() || `预设 ${new Date(now).toLocaleString()}`,
     createdAt: now,
     updatedAt: now,
     shaderSettings: cloneShaderSettings(shaderSettings),
-    timelineSettings: timelineSettings ? cloneTimelineSettings(timelineSettings) : undefined
+    timelineSettings: timelineSettings ? cloneTimelineSettings(timelineSettings) : undefined,
+    aspectRatio,
+    customAspect:
+      aspectRatio === 'custom'
+        ? cloneCustomAspect(framing?.customAspect ?? DEFAULT_CUSTOM_ASPECT)
+        : framing?.customAspect
+          ? cloneCustomAspect(framing.customAspect)
+          : undefined
   };
   await putShaderPreset(preset);
   return preset;
@@ -499,6 +577,7 @@ export async function createShaderPreset(
 export async function duplicateShaderPreset(source: ShaderPreset): Promise<ShaderPreset> {
   const now = Date.now();
   const base = source.name.replace(/\s*副本$/, '').trim() || '未命名预设';
+  const aspectRatio = sanitizeAspectRatioPreset(source.aspectRatio);
   const preset: ShaderPreset = {
     id: newPresetId(),
     name: `${base} 副本`,
@@ -507,7 +586,14 @@ export async function duplicateShaderPreset(source: ShaderPreset): Promise<Shade
     shaderSettings: cloneShaderSettings(source.shaderSettings),
     timelineSettings: source.timelineSettings
       ? cloneTimelineSettings(source.timelineSettings)
-      : undefined
+      : undefined,
+    aspectRatio,
+    customAspect:
+      aspectRatio === 'custom'
+        ? cloneCustomAspect(source.customAspect ?? DEFAULT_CUSTOM_ASPECT)
+        : source.customAspect
+          ? cloneCustomAspect(source.customAspect)
+          : undefined
   };
   await putShaderPreset(preset);
   return preset;
@@ -571,13 +657,23 @@ export async function importShaderPresetsFromJson(raw: unknown): Promise<number>
         const r = item as Record<string, unknown>;
         const shader = sanitizeShaderSettings(r.shaderSettings);
         if (!shader) return null;
+        const aspectRatio = sanitizeAspectRatioPreset(r.aspectRatio);
         return {
           id: newPresetId(),
           name: typeof r.name === 'string' ? r.name.trim() || '导入的预设' : '导入的预设',
           createdAt: now,
           updatedAt: now,
           shaderSettings: shader,
-          timelineSettings: sanitizeTimelineSettings(r.timelineSettings)
+          timelineSettings: sanitizeTimelineSettings(r.timelineSettings),
+          aspectRatio,
+          customAspect:
+            aspectRatio === 'custom'
+              ? clampCustomAspect(
+                  r.customAspect && typeof r.customAspect === 'object'
+                    ? (r.customAspect as CustomAspect)
+                    : DEFAULT_CUSTOM_ASPECT
+                )
+              : undefined
         } satisfies ShaderPreset;
       })();
     if (!fallback) continue;

@@ -54,9 +54,9 @@ Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist
 
 ## 配置复制与着色器预设
 
-- **复制配置**（侧栏底栏左侧）：当前 `transitionId` + 着色器 uniforms + 时长设置 → JSON（`kind: gl-web-shader-config`）。
-- **保存预设**（侧栏底栏右侧）：写入 IndexedDB `presets`（转场 + 着色器 + `timelineSettings` 时长，不含图片）。
-- **我的预设**面板（转场库上方）：应用 / **复制(副本)** / 重命名 / 删除；标题栏 **导入** / **导出** JSON（`kind: gl-web-presets`）。导入始终分配新 id（追加合并）。
+- **复制配置**（侧栏底栏左侧）：当前 `transitionId` + 着色器 uniforms + 时长 + 画幅 → JSON（`kind: gl-web-shader-config`，`version: 2`）。
+- **保存预设**（侧栏底栏右侧）：写入 IndexedDB `presets`（转场 + 着色器 + `timelineSettings` + `aspectRatio` / `customAspect`，不含图片）。
+- **我的预设**面板（转场库上方）：应用 / **复制(副本)** / 重命名 / 删除；标题栏 **导入** / **导出** JSON（`kind: gl-web-presets`，`version: 2`）。导入始终分配新 id（追加合并）；旧 v1 文件仍可导入（无画幅字段则跳过）。应用时默认勾选「覆盖当前画幅」。
 
 ## 快捷键
 

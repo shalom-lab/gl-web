@@ -954,6 +954,10 @@ export default function App() {
           onUpdateShader={handleShaderChange}
           timelineSettings={timelineSettings}
           onUpdateTimeline={handleTimelineChange}
+          aspectRatio={aspectRatio}
+          customAspect={customAspect}
+          onAspectRatioChange={setAspectRatio}
+          onCustomAspectChange={setCustomAspect}
           totalDuration={totalDuration}
           width={sidebarWidth}
           onOpenExport={() => setExportModalOpen(true)}
