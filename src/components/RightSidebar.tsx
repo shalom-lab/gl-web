@@ -19,7 +19,8 @@ import {
   Sliders,
   X,
   Copy,
-  BookmarkPlus
+  BookmarkPlus,
+  Trash2
 } from 'lucide-react';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from '../shaders/glTransitions';
 import { ShaderPresetPanel } from './ShaderPresetPanel';
@@ -45,6 +46,8 @@ interface RightSidebarProps {
   onReplaceSlide: (index: number, file: File) => void;
   onBatchUpload: (files: FileList) => void;
   onResetDefault: () => void;
+  /** Delete slides by id (after AppDialog confirm in sidebar). */
+  onDeleteSlides: (ids: string[]) => void;
   shaderSettings: ShaderSettings;
   onUpdateShader: (settings: ShaderSettings) => void;
   timelineSettings: TimelineSettings;
@@ -64,6 +67,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onReplaceSlide,
   onBatchUpload,
   onResetDefault,
+  onDeleteSlides,
   shaderSettings,
   onUpdateShader,
   timelineSettings,
@@ -92,6 +96,50 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     | { kind: 'delete'; preset: ShaderPreset };
 
   const [presetDialog, setPresetDialog] = useState<PresetDialogState>({ kind: 'closed' });
+  const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(() => new Set());
+  const [deleteSlidesOpen, setDeleteSlidesOpen] = useState(false);
+
+  // Drop stale selection when gallery changes
+  useEffect(() => {
+    const valid = new Set(slides.map((s) => s.id));
+    setSelectedSlideIds((prev) => {
+      const next = new Set([...prev].filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [slides]);
+
+  const allSelected = slides.length > 0 && selectedSlideIds.size === slides.length;
+  const someSelected = selectedSlideIds.size > 0;
+
+  const toggleSlideSelected = (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedSlideIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllSlides = () => {
+    setSelectedSlideIds(new Set(slides.map((s) => s.id)));
+  };
+
+  const clearSlideSelection = () => {
+    setSelectedSlideIds(new Set());
+  };
+
+  const requestDeleteSelectedSlides = () => {
+    if (!selectedSlideIds.size) return;
+    setDeleteSlidesOpen(true);
+  };
+
+  const confirmDeleteSelectedSlides = () => {
+    const ids = [...selectedSlideIds];
+    setDeleteSlidesOpen(false);
+    setSelectedSlideIds(new Set());
+    onDeleteSlides(ids);
+  };
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -515,11 +563,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         {activeTab === 'slides' && (
           <div className="space-y-3 text-xs">
             {/* Header actions */}
-            <div className="flex items-center justify-between pb-1 border-b border-zinc-100">
-              <span className="font-semibold text-zinc-800">
+            <div className="flex items-center justify-between pb-1 border-b border-zinc-100 gap-2">
+              <span className="font-semibold text-zinc-800 shrink-0">
                 图片序列 ({slides.length} 张)
               </span>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap justify-end">
                 <button
                   onClick={() => batchInputRef.current?.click()}
                   className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-700 bg-zinc-50 border border-zinc-200 rounded-md hover:bg-zinc-100 transition-colors cursor-pointer"
@@ -537,20 +585,70 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             </div>
 
+            {/* Multi-select toolbar */}
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-zinc-200 bg-zinc-50/80 px-2.5 py-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someSelected && !allSelected;
+                    }}
+                    onChange={() => (allSelected ? clearSlideSelection() : selectAllSlides())}
+                    className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900"
+                  />
+                  <span className="text-[11px] text-zinc-600">
+                    {someSelected ? `已选 ${selectedSlideIds.size}` : '全选'}
+                  </span>
+                </label>
+                {someSelected && (
+                  <button
+                    type="button"
+                    onClick={clearSlideSelection}
+                    className="text-[11px] text-zinc-500 hover:text-zinc-800 cursor-pointer"
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                disabled={!someSelected}
+                onClick={requestDeleteSelectedSlides}
+                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border transition-colors cursor-pointer disabled:opacity-40 disabled:pointer-events-none border-red-200 text-red-700 bg-red-50 hover:bg-red-100"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>删除所选</span>
+              </button>
+            </div>
+
             {/* List of slides */}
             <div className="space-y-2">
               {slides.map((slide, index) => {
                 const isActive = index === currentSlideIndex;
+                const isChecked = selectedSlideIds.has(slide.id);
                 return (
                   <div
                     key={slide.id || index}
                     onClick={() => onSelectSlide(index)}
-                    className={`group p-2 rounded-lg border flex items-center gap-3 cursor-pointer transition-all ${
+                    className={`group p-2 rounded-lg border flex items-center gap-2.5 cursor-pointer transition-all ${
                       isActive
                         ? 'border-zinc-900 bg-zinc-50 ring-1 ring-zinc-900/10 shadow-2xs'
-                        : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'
+                        : isChecked
+                          ? 'border-amber-300 bg-amber-50/40'
+                          : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/50'
                     }`}
                   >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleSlideSelected(slide.id)}
+                      className="shrink-0 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 cursor-pointer"
+                      title="选择以批量删除"
+                    />
+
                     {/* Thumbnail */}
                     <div className="relative w-16 h-10 rounded-md overflow-hidden bg-zinc-900 shrink-0 border border-zinc-200">
                       <img
@@ -583,7 +681,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                     {/* Action button */}
                     <button
                       onClick={(e) => handleSingleReplaceClick(e, index)}
-                      className="px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-900 bg-white border border-zinc-200 rounded hover:bg-zinc-100 transition-colors shrink-0 opacity-70 group-hover:opacity-100"
+                      className="px-2 py-1 text-[11px] text-zinc-500 hover:text-zinc-900 bg-white border border-zinc-200 rounded hover:bg-zinc-100 transition-colors shrink-0 opacity-70 group-hover:opacity-100 cursor-pointer"
                     >
                       换图
                     </button>
@@ -945,6 +1043,17 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         danger={presetDialog.kind === 'delete'}
         onCancel={closePresetDialog}
         onConfirm={(v) => void handlePresetDialogConfirm(v)}
+      />
+
+      <AppDialog
+        isOpen={deleteSlidesOpen}
+        mode="confirm"
+        title="删除所选图片"
+        description={`确定删除已选的 ${selectedSlideIds.size} 张图片？此操作不可撤销（可稍后「恢复默认」或重新上传）。`}
+        confirmLabel="删除"
+        danger
+        onCancel={() => setDeleteSlidesOpen(false)}
+        onConfirm={() => confirmDeleteSelectedSlides()}
       />
     </aside>
   );

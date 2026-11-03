@@ -312,6 +312,28 @@ export default function App() {
     void clearUploadedSlides();
   };
 
+  /** Bulk-delete selected slides; persist remaining gallery to IndexedDB. */
+  const handleDeleteSlides = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      const idSet = new Set(ids);
+      const remaining = slides.filter((s) => !idSet.has(s.id));
+      if (remaining.length === 0) {
+        // Keep the app usable — fall back to defaults when everything is removed
+        handleResetDefault();
+        return;
+      }
+      handleSlidesChange(remaining);
+      handleSeek(0);
+      void saveUploadedSlides(remaining).catch((err) => {
+        console.warn('保存删除后的图片失败:', err);
+      });
+    },
+    // handleSlidesChange is stable useCallback; handleResetDefault recreated each render — ok
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slides, handleSlidesChange]
+  );
+
   // Style Presets
   const handleApplyPreset = (presetName: string) => {
     let newShader = { ...shaderSettings };
@@ -832,6 +854,7 @@ export default function App() {
           onReplaceSlide={handleReplaceSlide}
           onBatchUpload={handleBatchUpload}
           onResetDefault={handleResetDefault}
+          onDeleteSlides={handleDeleteSlides}
           shaderSettings={shaderSettings}
           onUpdateShader={handleShaderChange}
           timelineSettings={timelineSettings}
