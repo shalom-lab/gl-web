@@ -1,0 +1,6 @@
+{
+  "name": "ArtLens - Three.js 艺术视频生成器",
+  "description": "基于 Three.js 与自定义着色器的图片艺术视频生成器，支持多图电影感特效编排、无损逐帧 PNG 序列及高清视频导出。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
