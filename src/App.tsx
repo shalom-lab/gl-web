@@ -7,6 +7,11 @@ import {
   TimelineSettings
 } from './types';
 import { getDefaultImageSlides } from './utils/proceduralImages';
+import {
+  clearUploadedSlides,
+  loadUploadedSlides,
+  saveUploadedSlides
+} from './utils/imageStore';
 import { RendererEngine, ProgressInfo } from './core/rendererEngine';
 import { Header } from './components/Header';
 import { TimelineControl } from './components/TimelineControl';
@@ -19,8 +24,9 @@ export default function App() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<RendererEngine | null>(null);
 
-  // Initial 10 aesthetic slides
-  const [slides, setSlides] = useState<ImageSlide[]>(() => getDefaultImageSlides());
+  // Gallery slides — hydrated from IndexedDB when a durable upload exists
+  const [slides, setSlides] = useState<ImageSlide[]>([]);
+  const [slidesReady, setSlidesReady] = useState(false);
 
   // Aspect ratio presets
   const [aspectRatio, setAspectRatio] = useState<AspectRatioPreset>('16:9');
@@ -65,9 +71,23 @@ export default function App() {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultType, setResultType] = useState<'png-zip' | 'webm-video' | null>(null);
 
-  // Initialize Three.js WebGL Engine
+  // Restore uploaded gallery from IndexedDB (one durable copy) before engine init
   useEffect(() => {
-    if (!canvasRef.current) return;
+    let cancelled = false;
+    (async () => {
+      const stored = await loadUploadedSlides();
+      if (cancelled) return;
+      setSlides(stored && stored.length > 0 ? stored : getDefaultImageSlides());
+      setSlidesReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Initialize Three.js WebGL Engine after slides are ready
+  useEffect(() => {
+    if (!slidesReady || !canvasRef.current) return;
 
     const engine = new RendererEngine(
       canvasRef.current,
@@ -90,7 +110,8 @@ export default function App() {
       engine.dispose();
       engineRef.current = null;
     };
-  }, []); // Run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init once when slidesReady flips true
+  }, [slidesReady]);
 
   // Resize observer to update WebGL viewport when container dimensions change
   useEffect(() => {
@@ -171,7 +192,7 @@ export default function App() {
     handleSelectSlide(nextIndex);
   };
 
-  // Replace single slide with user file
+  // Replace single slide with user file — persist gallery to IndexedDB
   const handleReplaceSlide = (index: number, file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -187,13 +208,16 @@ export default function App() {
           aspectRatio: aspect
         };
         handleSlidesChange(newSlides);
+        void saveUploadedSlides(newSlides).catch((err) => {
+          console.warn('保存上传图片失败:', err);
+        });
       };
       img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   };
 
-  // Batch upload up to 10+ images
+  // Batch upload up to 10+ images — persist one durable copy in IndexedDB
   const handleBatchUpload = (files: FileList) => {
     const fileArray = Array.from(files).slice(0, 10);
     const promises = fileArray.map((file, i) => {
@@ -219,6 +243,9 @@ export default function App() {
     Promise.all(promises).then((newUploadedSlides) => {
       handleSlidesChange(newUploadedSlides);
       handleSeek(0);
+      void saveUploadedSlides(newUploadedSlides).catch((err) => {
+        console.warn('保存上传图片失败:', err);
+      });
     });
   };
 
@@ -226,6 +253,7 @@ export default function App() {
     const defaults = getDefaultImageSlides();
     handleSlidesChange(defaults);
     handleSeek(0);
+    void clearUploadedSlides();
   };
 
   // Style Presets
@@ -445,6 +473,14 @@ export default function App() {
         return 'aspect-video max-w-5xl max-h-[72vh]';
     }
   }, [aspectRatio]);
+
+  if (!slidesReady) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-zinc-100 text-zinc-600 text-sm">
+        正在加载图片…
+      </div>
+    );
+  }
 
   return (
     <div

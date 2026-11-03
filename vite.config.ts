@@ -3,8 +3,10 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+// Project Pages: https://shalom-lab.github.io/gl-web/
 export default defineConfig(() => {
   return {
+    base: '/gl-web/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
