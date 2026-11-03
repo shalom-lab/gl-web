@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ColorTone,
   ImageSlide,
@@ -17,9 +17,20 @@ import {
   ExternalLink,
   Search,
   Sliders,
-  X
+  X,
+  Copy,
+  BookmarkPlus
 } from 'lucide-react';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from '../shaders/glTransitions';
+import { ShaderPresetPanel } from './ShaderPresetPanel';
+import {
+  buildShaderConfigExport,
+  createShaderPreset,
+  deleteShaderPreset,
+  listShaderPresets,
+  renameShaderPreset,
+  type ShaderPreset
+} from '../utils/imageStore';
 
 interface RightSidebarProps {
   activeTab: 'transitions' | 'effects' | 'slides';
@@ -66,6 +77,126 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     'all' | 'cinematic' | 'motion' | 'fluid' | 'art' | 'custom'
   >('all');
   const [transitionSearch, setTransitionSearch] = useState<string>('');
+  const [presets, setPresets] = useState<ShaderPreset[]>([]);
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimerRef.current != null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 2200);
+  }, []);
+
+  const refreshPresets = useCallback(async () => {
+    const list = await listShaderPresets();
+    setPresets(list);
+  }, []);
+
+  useEffect(() => {
+    void refreshPresets();
+    return () => {
+      if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+    };
+  }, [refreshPresets]);
+
+  const handleCopyConfig = useCallback(async () => {
+    const payload = buildShaderConfigExport(shaderSettings);
+    const json = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(json);
+      showToast('配置已复制到剪贴板');
+    } catch (err) {
+      console.warn('clipboard write failed', err);
+      // Fallback for older browsers / denied permission
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = json;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('配置已复制到剪贴板');
+      } catch {
+        showToast('复制失败，请检查浏览器权限');
+      }
+    }
+  }, [shaderSettings, showToast]);
+
+  const handleSavePreset = useCallback(async () => {
+    const defaultName = (() => {
+      const t =
+        shaderSettings.transitionId === 'custom'
+          ? '自定义 GLSL'
+          : GL_TRANSITIONS_CATALOG.find((x) => x.id === shaderSettings.transitionId)?.name;
+      return t ? `${t} 预设` : '我的预设';
+    })();
+    const name = window.prompt('为当前转场 + 着色器配置命名：', defaultName);
+    if (name == null) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      showToast('预设名称不能为空');
+      return;
+    }
+    try {
+      await createShaderPreset(trimmed, shaderSettings);
+      await refreshPresets();
+      showToast(`已保存预设「${trimmed}」`);
+    } catch (err: any) {
+      showToast('保存失败: ' + (err?.message || '未知错误'));
+    }
+  }, [shaderSettings, refreshPresets, showToast]);
+
+  const handleApplyPreset = useCallback(
+    (preset: ShaderPreset) => {
+      onUpdateShader({ ...preset.shaderSettings });
+      if (preset.shaderSettings.transitionId === 'custom') {
+        setTransitionCategory('custom');
+      } else if (transitionCategory === 'custom') {
+        setTransitionCategory('all');
+      }
+      onPreviewTransition?.();
+      showToast(`已应用「${preset.name}」`);
+    },
+    [onUpdateShader, onPreviewTransition, showToast, transitionCategory]
+  );
+
+  const handleRenamePreset = useCallback(
+    async (preset: ShaderPreset) => {
+      const name = window.prompt('重命名预设：', preset.name);
+      if (name == null) return;
+      const trimmed = name.trim();
+      if (!trimmed) {
+        showToast('名称不能为空');
+        return;
+      }
+      try {
+        await renameShaderPreset(preset.id, trimmed);
+        await refreshPresets();
+        showToast('已重命名');
+      } catch (err: any) {
+        showToast('重命名失败: ' + (err?.message || '未知错误'));
+      }
+    },
+    [refreshPresets, showToast]
+  );
+
+  const handleDeletePreset = useCallback(
+    async (preset: ShaderPreset) => {
+      if (!window.confirm(`确定删除预设「${preset.name}」？`)) return;
+      try {
+        await deleteShaderPreset(preset.id);
+        await refreshPresets();
+        showToast('已删除预设');
+      } catch (err: any) {
+        showToast('删除失败: ' + (err?.message || '未知错误'));
+      }
+    },
+    [refreshPresets, showToast]
+  );
 
   const updateShader = <K extends keyof ShaderSettings>(key: K, value: ShaderSettings[K]) => {
     onUpdateShader({
@@ -435,6 +566,15 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               <p className="text-[11px] text-zinc-400 mt-1">两张图之间 gl-transitions 融合时长</p>
             </div>
 
+            {/* User shader/transition presets (above catalog) */}
+            <ShaderPresetPanel
+              presets={presets}
+              activeTransitionId={shaderSettings.transitionId}
+              onApply={handleApplyPreset}
+              onRename={handleRenamePreset}
+              onDelete={handleDeletePreset}
+            />
+
             {/* Search and Category Filter Chips */}
             <div className="pt-2 border-t border-zinc-100 space-y-2">
               <div className="flex items-center justify-between">
@@ -631,21 +771,49 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         )}
       </div>
 
-      {/* Sticky Bottom Export Action Bar */}
-      <div className="p-4 border-t border-zinc-200 bg-zinc-50/60">
+      {/* Sticky Bottom Action Bar: 复制配置 | 导出 | 保存预设 */}
+      <div className="relative p-4 border-t border-zinc-200 bg-zinc-50/60">
+        {toast && (
+          <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-30 px-3 py-1.5 rounded-full bg-zinc-900 text-white text-[11px] font-medium shadow-lg whitespace-nowrap pointer-events-none">
+            {toast}
+          </div>
+        )}
         <div className="flex items-center justify-between text-[11px] text-zinc-500 mb-2.5">
           <span>{slides.length} 张图片</span>
           <span>
             总时长: <strong className="text-zinc-800 font-mono">{totalDuration.toFixed(1)}s</strong>
           </span>
         </div>
-        <button
-          onClick={onOpenExport}
-          className="w-full py-2.5 px-4 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 font-medium text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
-        >
-          <Download className="w-4 h-4 text-amber-400" />
-          <span>导出视频 / PNG 逐帧序列</span>
-        </button>
+        <div className="flex items-stretch gap-2">
+          <button
+            type="button"
+            onClick={() => void handleCopyConfig()}
+            title="复制当前转场 + 着色器配置为 JSON"
+            className="shrink-0 px-2.5 py-2.5 rounded-lg bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 font-medium text-[11px] flex flex-col sm:flex-row items-center justify-center gap-1 shadow-2xs transition-colors cursor-pointer min-w-[4.5rem]"
+          >
+            <Copy className="w-3.5 h-3.5 text-amber-500" />
+            <span>复制配置</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onOpenExport}
+            className="flex-1 min-w-0 py-2.5 px-3 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 font-medium text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="truncate">导出视频 / PNG 逐帧序列</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleSavePreset()}
+            title="将当前转场 + 着色器保存为预设"
+            className="shrink-0 px-2.5 py-2.5 rounded-lg bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 font-medium text-[11px] flex flex-col sm:flex-row items-center justify-center gap-1 shadow-2xs transition-colors cursor-pointer min-w-[4.5rem]"
+          >
+            <BookmarkPlus className="w-3.5 h-3.5 text-amber-500" />
+            <span>保存预设</span>
+          </button>
+        </div>
       </div>
     </aside>
   );

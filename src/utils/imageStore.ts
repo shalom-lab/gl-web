@@ -13,9 +13,10 @@ import type {
 } from '../types';
 
 const DB_NAME = 'gl-web';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const SLIDES_STORE = 'slides';
 const PREFS_STORE = 'prefs';
+const PRESETS_STORE = 'presets';
 
 /** Singleton key for the prefs record (one durable copy). */
 export const APP_PREFS_KEY = 'app';
@@ -62,6 +63,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(PREFS_STORE)) {
         db.createObjectStore(PREFS_STORE, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(PRESETS_STORE)) {
+        db.createObjectStore(PRESETS_STORE, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -277,4 +281,125 @@ export async function saveAppPrefs(prefs: AppPrefsInput): Promise<void> {
   } catch (err) {
     console.warn('[imageStore] 保存偏好失败:', err);
   }
+}
+
+
+/** User-saved transition + shader preset (no slides/images). */
+export interface ShaderPreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  /** Full shader/uniform + transitionId (+ optional customGlsl) */
+  shaderSettings: ShaderSettings;
+}
+
+/** Clipboard / share payload for「复制配置」. */
+export interface ShaderConfigExport {
+  version: 1;
+  kind: 'gl-web-shader-config';
+  exportedAt: string;
+  shaderSettings: ShaderSettings;
+}
+
+export function buildShaderConfigExport(shaderSettings: ShaderSettings): ShaderConfigExport {
+  return {
+    version: 1,
+    kind: 'gl-web-shader-config',
+    exportedAt: new Date().toISOString(),
+    shaderSettings: { ...shaderSettings }
+  };
+}
+
+function sanitizePreset(raw: unknown): ShaderPreset | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== 'string' || typeof r.name !== 'string') return null;
+  const shader = sanitizeShaderSettings(r.shaderSettings);
+  if (!shader) return null;
+  const createdAt = typeof r.createdAt === 'number' ? r.createdAt : Date.now();
+  const updatedAt = typeof r.updatedAt === 'number' ? r.updatedAt : createdAt;
+  return {
+    id: r.id,
+    name: r.name.trim() || '未命名预设',
+    createdAt,
+    updatedAt,
+    shaderSettings: shader
+  };
+}
+
+/** List all shader/transition presets, newest first. */
+export async function listShaderPresets(): Promise<ShaderPreset[]> {
+  try {
+    const db = await openDb();
+    const records = await new Promise<ShaderPreset[]>((resolve, reject) => {
+      const tx = db.transaction(PRESETS_STORE, 'readonly');
+      const req = tx.objectStore(PRESETS_STORE).getAll();
+      req.onsuccess = () => resolve((req.result as ShaderPreset[]) ?? []);
+      req.onerror = () => reject(req.error ?? new Error('读取预设失败'));
+    });
+    db.close();
+    return records
+      .map(sanitizePreset)
+      .filter((p): p is ShaderPreset => p != null)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  } catch (err) {
+    console.warn('[imageStore] 无法读取预设:', err);
+    return [];
+  }
+}
+
+/** Create or overwrite a preset (put by id). */
+export async function putShaderPreset(preset: ShaderPreset): Promise<void> {
+  const clean = sanitizePreset(preset);
+  if (!clean) throw new Error('无效的预设数据');
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PRESETS_STORE, 'readwrite');
+    tx.objectStore(PRESETS_STORE).put(clean);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error('保存预设失败'));
+  });
+  db.close();
+}
+
+/** Delete a preset by id. */
+export async function deleteShaderPreset(id: string): Promise<void> {
+  const db = await openDb();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(PRESETS_STORE, 'readwrite');
+    tx.objectStore(PRESETS_STORE).delete(id);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error('删除预设失败'));
+  });
+  db.close();
+}
+
+/** Create a new preset from current shader settings. */
+export async function createShaderPreset(
+  name: string,
+  shaderSettings: ShaderSettings
+): Promise<ShaderPreset> {
+  const now = Date.now();
+  const preset: ShaderPreset = {
+    id: `preset_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    name: name.trim() || `预设 ${new Date(now).toLocaleString()}`,
+    createdAt: now,
+    updatedAt: now,
+    shaderSettings: { ...shaderSettings }
+  };
+  await putShaderPreset(preset);
+  return preset;
+}
+
+/** Rename an existing preset. */
+export async function renameShaderPreset(id: string, name: string): Promise<void> {
+  const all = await listShaderPresets();
+  const found = all.find((p) => p.id === id);
+  if (!found) throw new Error('预设不存在');
+  await putShaderPreset({
+    ...found,
+    name: name.trim() || found.name,
+    updatedAt: Date.now()
+  });
 }
