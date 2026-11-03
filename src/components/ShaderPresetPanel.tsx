@@ -14,6 +14,8 @@ import { GL_TRANSITIONS_CATALOG } from '../shaders/glTransitions';
 interface ShaderPresetPanelProps {
   presets: ShaderPreset[];
   activeTransitionId: string;
+  /** Currently applied user-preset id (baseline), or null. */
+  appliedPresetId: string | null;
   /** When true (default), applying a preset also restores its saved frame aspect. */
   applyAspect: boolean;
   onApplyAspectChange: (next: boolean) => void;
@@ -49,6 +51,7 @@ function aspectHint(preset: ShaderPreset): string | null {
 export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
   presets,
   activeTransitionId,
+  appliedPresetId,
   applyAspect,
   onApplyAspectChange,
   onApply,
@@ -119,31 +122,44 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
 
       {presets.length === 0 ? (
         <p className="text-[11px] text-zinc-400 leading-relaxed px-0.5">
-          暂无预设。调好转场 / 着色器 / 时长 / 画幅后，点底部「保存预设」；也可点「导入」加载
-          JSON。
+          暂无预设。调好转场 / 着色器 / 时长 / 画幅后，点底部「保存预设」新建一条基准；已保存的参数默认不可改（可重命名
+          / 删除，或开启「同步修改预设」）。
         </p>
       ) : (
         <ul className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
           {presets.map((preset) => {
-            const isActiveLike = preset.shaderSettings.transitionId === activeTransitionId;
+            const isApplied = appliedPresetId === preset.id;
+            const sameTransition =
+              !isApplied && preset.shaderSettings.transitionId === activeTransitionId;
             const timing = timingHint(preset);
             const aspect = aspectHint(preset);
             return (
               <li
                 key={preset.id}
-                className="group flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 hover:border-zinc-300 transition-colors"
+                className={`group flex items-center gap-1 rounded-md border px-2 py-1.5 transition-colors ${
+                  isApplied
+                    ? 'border-amber-400 bg-amber-50 shadow-2xs ring-1 ring-amber-200/80'
+                    : 'border-zinc-200 bg-white hover:border-zinc-300'
+                }`}
               >
                 <button
                   type="button"
                   onClick={() => onApply(preset)}
-                  title="应用此预设"
+                  title={isApplied ? '再次点击：取消应用并恢复应用前的手动参数' : '应用此预设（作为基准）'}
+                  aria-pressed={isApplied}
                   className="flex-1 min-w-0 text-left cursor-pointer"
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span className="text-[11px] font-semibold text-zinc-900 truncate">
                       {preset.name}
                     </span>
-                    {isActiveLike && (
+                    {isApplied && (
+                      <span className="shrink-0 inline-flex items-center gap-0.5 text-[9px] text-amber-900 bg-amber-100 border border-amber-300 px-1 rounded font-medium">
+                        <Check className="w-2.5 h-2.5" />
+                        已应用
+                      </span>
+                    )}
+                    {sameTransition && (
                       <span className="shrink-0 inline-flex items-center gap-0.5 text-[9px] text-amber-700 bg-amber-50 border border-amber-200 px-1 rounded">
                         <Check className="w-2.5 h-2.5" />
                         同转场
@@ -159,7 +175,7 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => onDuplicate(preset)}
-                  title="复制为新预设"
+                  title="复制为新预设（深拷贝，不改原预设）"
                   className="p-1 rounded text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
                 >
                   <Copy className="w-3 h-3" />

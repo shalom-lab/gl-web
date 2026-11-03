@@ -612,6 +612,46 @@ export async function renameShaderPreset(id: string, name: string): Promise<void
 }
 
 /**
+ * Overwrite preset parameters (shader / timeline / framing) while keeping id + name.
+ * Used only when the user explicitly enables「同步修改预设」.
+ */
+export async function updateShaderPresetParams(
+  id: string,
+  patch: {
+    shaderSettings: ShaderSettings;
+    timelineSettings?: TimelineSettings;
+    aspectRatio?: AspectRatioPreset;
+    customAspect?: CustomAspect;
+  }
+): Promise<ShaderPreset> {
+  const all = await listShaderPresets();
+  const found = all.find((p) => p.id === id);
+  if (!found) throw new Error('预设不存在');
+  const aspectRatio = sanitizeAspectRatioPreset(patch.aspectRatio ?? found.aspectRatio);
+  const next: ShaderPreset = {
+    ...found,
+    updatedAt: Date.now(),
+    shaderSettings: cloneShaderSettings(patch.shaderSettings),
+    timelineSettings: patch.timelineSettings
+      ? cloneTimelineSettings(patch.timelineSettings)
+      : found.timelineSettings
+        ? cloneTimelineSettings(found.timelineSettings)
+        : undefined,
+    aspectRatio,
+    customAspect:
+      aspectRatio === 'custom'
+        ? cloneCustomAspect(patch.customAspect ?? found.customAspect ?? DEFAULT_CUSTOM_ASPECT)
+        : patch.customAspect
+          ? cloneCustomAspect(patch.customAspect)
+          : found.customAspect
+            ? cloneCustomAspect(found.customAspect)
+            : undefined
+  };
+  await putShaderPreset(next);
+  return next;
+}
+
+/**
  * Import presets from a JSON file payload.
  * Always assigns new ids (additive merge — never overwrites existing by id).
  * Returns how many were imported.

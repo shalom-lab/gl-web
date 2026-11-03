@@ -40,6 +40,7 @@ import {
   importShaderPresetsFromJson,
   listShaderPresets,
   renameShaderPreset,
+  updateShaderPresetParams,
   type ShaderPreset
 } from '../utils/imageStore';
 
@@ -117,6 +118,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   const [selectedSlideIds, setSelectedSlideIds] = useState<Set<string>>(() => new Set());
   const [deleteSlidesOpen, setDeleteSlidesOpen] = useState(false);
   const [applyAspectOnPreset, setApplyAspectOnPreset] = useState(true);
+  /** Currently applied user-preset baseline id. */
+  const [appliedPresetId, setAppliedPresetId] = useState<string | null>(null);
+  /** When true + a preset is applied, live edits write back into that preset. */
+  const [syncPresetEdits, setSyncPresetEdits] = useState(false);
+  type ManualSnapshot = {
+    shaderSettings: ShaderSettings;
+    timelineSettings: TimelineSettings;
+    aspectRatio: AspectRatioPreset;
+    customAspect: CustomAspect;
+  };
+  const manualSnapshotRef = useRef<ManualSnapshot | null>(null);
+  const syncTimerRef = useRef<number | null>(null);
 
   // Drop stale selection when gallery changes
   useEffect(() => {
@@ -177,8 +190,23 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     void refreshPresets();
     return () => {
       if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current);
+      if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
     };
   }, [refreshPresets]);
+
+  // Drop applied marker if the preset was deleted / missing after refresh
+  useEffect(() => {
+    if (appliedPresetId && !presets.some((p) => p.id === appliedPresetId)) {
+      setAppliedPresetId(null);
+      setSyncPresetEdits(false);
+    }
+  }, [presets, appliedPresetId]);
+
+  useEffect(() => {
+    if (!appliedPresetId && syncPresetEdits) {
+      setSyncPresetEdits(false);
+    }
+  }, [appliedPresetId, syncPresetEdits]);
 
   const handleCopyConfig = useCallback(async () => {
     const payload = buildShaderConfigExport(
@@ -190,7 +218,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     const json = JSON.stringify(payload, null, 2);
     try {
       await navigator.clipboard.writeText(json);
-      showToast('配置已复制到剪贴板');
+      showToast('已复制当前实时配置');
     } catch (err) {
       console.warn('clipboard write failed', err);
       // Fallback for older browsers / denied permission
@@ -203,7 +231,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         ta.select();
         document.execCommand('copy');
         document.body.removeChild(ta);
-        showToast('配置已复制到剪贴板');
+        showToast('已复制当前实时配置');
       } catch {
         showToast('复制失败，请检查浏览器权限');
       }
@@ -221,8 +249,57 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     setPresetDialog({ kind: 'save', defaultName });
   }, [shaderSettings.transitionId]);
 
+  const takeManualSnapshot = useCallback((): ManualSnapshot => {
+    return {
+      shaderSettings: { ...shaderSettings, customGlsl: shaderSettings.customGlsl },
+      timelineSettings: { ...timelineSettings },
+      aspectRatio,
+      customAspect: { ...customAspect }
+    };
+  }, [shaderSettings, timelineSettings, aspectRatio, customAspect]);
+
+  const restoreManualSnapshot = useCallback(
+    (snap: ManualSnapshot) => {
+      onUpdateShader({ ...snap.shaderSettings });
+      onUpdateTimeline({ ...snap.timelineSettings });
+      onAspectRatioChange(snap.aspectRatio);
+      onCustomAspectChange(clampCustomAspect(snap.customAspect));
+      if (snap.shaderSettings.transitionId === 'custom') {
+        setTransitionCategory('custom');
+      } else if (transitionCategory === 'custom') {
+        setTransitionCategory('all');
+      }
+    },
+    [
+      onUpdateShader,
+      onUpdateTimeline,
+      onAspectRatioChange,
+      onCustomAspectChange,
+      transitionCategory
+    ]
+  );
+
   const handleApplyPreset = useCallback(
     (preset: ShaderPreset) => {
+      // Toggle off: restore pre-apply manual snapshot
+      if (appliedPresetId === preset.id) {
+        const snap = manualSnapshotRef.current;
+        if (snap) {
+          restoreManualSnapshot(snap);
+        }
+        manualSnapshotRef.current = null;
+        setAppliedPresetId(null);
+        setSyncPresetEdits(false);
+        showToast(`已取消应用「${preset.name}」，已恢复手动参数`);
+        return;
+      }
+
+      // First apply from manual mode: remember what to restore later
+      if (!appliedPresetId) {
+        manualSnapshotRef.current = takeManualSnapshot();
+      }
+      // Switching presets keeps the original manual snapshot
+
       onUpdateShader({ ...preset.shaderSettings });
       if (preset.timelineSettings) {
         onUpdateTimeline({ ...preset.timelineSettings });
@@ -242,6 +319,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       } else if (transitionCategory === 'custom') {
         setTransitionCategory('all');
       }
+      setAppliedPresetId(preset.id);
+      // Sync stays off until the user opts in
+      setSyncPresetEdits(false);
       onPreviewTransition?.();
       const aspectNote =
         applyAspectOnPreset && preset.aspectRatio
@@ -252,6 +332,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       showToast(`已应用「${preset.name}」${aspectNote}`);
     },
     [
+      appliedPresetId,
+      takeManualSnapshot,
+      restoreManualSnapshot,
       onUpdateShader,
       onUpdateTimeline,
       onAspectRatioChange,
@@ -260,6 +343,37 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       showToast,
       transitionCategory,
       applyAspectOnPreset
+    ]
+  );
+
+  /** Debounced write of live settings into the applied preset (IDB). */
+  const scheduleSyncAppliedPreset = useCallback(
+    (nextShader: ShaderSettings, nextTimeline: TimelineSettings) => {
+      if (!syncPresetEdits || !appliedPresetId) return;
+      if (syncTimerRef.current != null) window.clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = window.setTimeout(() => {
+        void (async () => {
+          try {
+            await updateShaderPresetParams(appliedPresetId, {
+              shaderSettings: nextShader,
+              timelineSettings: nextTimeline,
+              aspectRatio,
+              customAspect
+            });
+            await refreshPresets();
+          } catch (err: any) {
+            showToast('同步预设失败: ' + (err?.message || '未知错误'));
+          }
+        })();
+      }, 280);
+    },
+    [
+      syncPresetEdits,
+      appliedPresetId,
+      aspectRatio,
+      customAspect,
+      refreshPresets,
+      showToast
     ]
   );
 
@@ -373,6 +487,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         setPresetDialog({ kind: 'closed' });
         try {
           await deleteShaderPreset(id);
+          if (appliedPresetId === id) {
+            setAppliedPresetId(null);
+            setSyncPresetEdits(false);
+            manualSnapshotRef.current = null;
+          }
           await refreshPresets();
           showToast('已删除预设');
         } catch (err: any) {
@@ -380,18 +499,28 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         }
       }
     },
-    [presetDialog, shaderSettings, timelineSettings, aspectRatio, customAspect, refreshPresets, showToast]
+    [presetDialog, shaderSettings, timelineSettings, aspectRatio, customAspect, appliedPresetId, refreshPresets, showToast]
   );
 
+  const commitShader = (next: ShaderSettings) => {
+    onUpdateShader(next);
+    scheduleSyncAppliedPreset(next, timelineSettings);
+  };
+
+  const commitTimeline = (next: TimelineSettings) => {
+    onUpdateTimeline(next);
+    scheduleSyncAppliedPreset(shaderSettings, next);
+  };
+
   const updateShader = <K extends keyof ShaderSettings>(key: K, value: ShaderSettings[K]) => {
-    onUpdateShader({
+    commitShader({
       ...shaderSettings,
       [key]: value
     });
   };
 
   const updateTiming = <K extends keyof TimelineSettings>(key: K, value: TimelineSettings[K]) => {
-    onUpdateTimeline({
+    commitTimeline({
       ...timelineSettings,
       [key]: value
     });
@@ -405,7 +534,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     // If the active transition was the custom editor, fall back to a catalog preset
     // so the user isn't stuck on an invisible custom shader with no close path.
     if (shaderSettings.transitionId === 'custom') {
-      onUpdateShader({
+      commitShader({
         ...shaderSettings,
         transitionId: 'crossfade'
       });
@@ -415,7 +544,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   const handleTransitionCategoryClick = (cat: TransitionCategory) => {
     if (cat === 'custom') {
       setTransitionCategory('custom');
-      onUpdateShader({
+      commitShader({
         ...shaderSettings,
         transitionId: 'custom',
         customGlsl: shaderSettings.customGlsl || DEFAULT_CUSTOM_GLSL
@@ -805,9 +934,10 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             </div>
 
             {/* User shader/transition presets (above catalog) */}
-                          <ShaderPresetPanel
+              <ShaderPresetPanel
                 presets={presets}
                 activeTransitionId={shaderSettings.transitionId}
+                appliedPresetId={appliedPresetId}
                 applyAspect={applyAspectOnPreset}
                 onApplyAspectChange={setApplyAspectOnPreset}
                 onApply={handleApplyPreset}
@@ -921,7 +1051,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   rows={9}
                   value={shaderSettings.customGlsl ?? DEFAULT_CUSTOM_GLSL}
                   onChange={(e) => {
-                    onUpdateShader({
+                    commitShader({
                       ...shaderSettings,
                       customGlsl: e.target.value,
                       transitionId: 'custom'
@@ -1027,11 +1157,55 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             总时长: <strong className="text-zinc-800 font-mono">{totalDuration.toFixed(1)}s</strong>
           </span>
         </div>
+        <label
+          className={`flex items-center gap-1.5 mb-2 text-[10px] select-none ${
+            appliedPresetId
+              ? 'text-zinc-700 cursor-pointer'
+              : 'text-zinc-400 cursor-not-allowed'
+          }`}
+          title={
+            appliedPresetId
+              ? '开启后，调节滑杆/转场等会写入当前已应用预设'
+              : '请先在「我的预设」中应用一条预设'
+          }
+        >
+          <input
+            type="checkbox"
+            checked={Boolean(appliedPresetId) && syncPresetEdits}
+            disabled={!appliedPresetId}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setSyncPresetEdits(on);
+              if (on && appliedPresetId) {
+                // Immediate flush so enabling sync captures current live params
+                void updateShaderPresetParams(appliedPresetId, {
+                  shaderSettings,
+                  timelineSettings,
+                  aspectRatio,
+                  customAspect
+                })
+                  .then(() => refreshPresets())
+                  .catch((err: any) =>
+                    showToast('同步预设失败: ' + (err?.message || '未知错误'))
+                  );
+              }
+            }}
+            className="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 disabled:opacity-40"
+          />
+          <span>同步修改预设</span>
+          <span className="text-zinc-400 truncate">
+            {appliedPresetId
+              ? syncPresetEdits
+                ? '· 调节将写入已应用预设'
+                : '· 仅改实时预览，预设保持基准'
+              : '· 未应用预设时不可用'}
+          </span>
+        </label>
         <div className="flex items-stretch gap-2">
           <button
             type="button"
             onClick={() => void handleCopyConfig()}
-            title="复制当前转场 + 着色器 + 时长 + 画幅配置为 JSON"
+            title="复制当前实时配置（转场 + 着色器 + 时长 + 画幅）为 JSON"
             className="shrink-0 px-2.5 py-2.5 rounded-lg bg-white border border-zinc-200 text-zinc-700 hover:bg-zinc-100 hover:border-zinc-300 font-medium text-[11px] flex flex-col sm:flex-row items-center justify-center gap-1 shadow-2xs transition-colors cursor-pointer min-w-[4.5rem]"
           >
             <Copy className="w-3.5 h-3.5 text-amber-500" />
@@ -1075,7 +1249,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         }
         description={
           presetDialog.kind === 'save'
-            ? '为当前转场、着色器参数、时长与画幅命名，保存后可在「我的预设」中一键应用。'
+            ? '将当前实时参数保存为新的预设基准（不会覆盖已有预设；之后默认只能重命名/删除，除非开启「同步修改预设」）。'
             : presetDialog.kind === 'rename'
               ? '修改预设显示名称（不会改变其中的转场 / 着色器 / 时长 / 画幅内容）。'
               : presetDialog.kind === 'delete'
