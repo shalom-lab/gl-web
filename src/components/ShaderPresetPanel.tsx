@@ -1,5 +1,13 @@
-import React from 'react';
-import { Bookmark, Check, Pencil, Trash2 } from 'lucide-react';
+import React, { useRef } from 'react';
+import {
+  Bookmark,
+  Check,
+  Copy,
+  Download,
+  Pencil,
+  Trash2,
+  Upload
+} from 'lucide-react';
 import type { ShaderPreset } from '../utils/imageStore';
 import { GL_TRANSITIONS_CATALOG } from '../shaders/glTransitions';
 
@@ -7,8 +15,11 @@ interface ShaderPresetPanelProps {
   presets: ShaderPreset[];
   activeTransitionId: string;
   onApply: (preset: ShaderPreset) => void;
+  onDuplicate: (preset: ShaderPreset) => void;
   onRename: (preset: ShaderPreset) => void;
   onDelete: (preset: ShaderPreset) => void;
+  onExport: () => void;
+  onImportFile: (file: File) => void;
 }
 
 function transitionLabel(transitionId: string): string {
@@ -16,36 +27,83 @@ function transitionLabel(transitionId: string): string {
   return GL_TRANSITIONS_CATALOG.find((t) => t.id === transitionId)?.name ?? transitionId;
 }
 
+function timingHint(preset: ShaderPreset): string | null {
+  const t = preset.timelineSettings;
+  if (!t) return null;
+  return `${t.slideDuration.toFixed(1)}s + 转场 ${t.transitionDuration.toFixed(1)}s`;
+}
+
 export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
   presets,
   activeTransitionId,
   onApply,
+  onDuplicate,
   onRename,
-  onDelete
+  onDelete,
+  onExport,
+  onImportFile
 }) => {
+  const importInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50/80 p-2.5 space-y-2">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800">
-          <Bookmark className="w-3.5 h-3.5 text-amber-500" />
-          <span>我的预设</span>
-          <span className="text-[10px] font-normal text-zinc-400">转场 + 着色器</span>
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-800 min-w-0">
+          <Bookmark className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span className="shrink-0">我的预设</span>
+          <span className="text-[10px] font-normal text-zinc-400 truncate">
+            转场 + 着色器 + 时长
+          </span>
         </div>
-        <span className="text-[10px] text-zinc-400 font-mono">{presets.length}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            title="从 JSON 导入预设"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-zinc-600 bg-white border border-zinc-200 hover:bg-zinc-100 hover:text-zinc-900 transition-colors cursor-pointer"
+          >
+            <Upload className="w-3 h-3 text-amber-500" />
+            <span>导入</span>
+          </button>
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={presets.length === 0}
+            title="导出全部预设为 JSON"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-zinc-600 bg-white border border-zinc-200 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+          >
+            <Download className="w-3 h-3 text-amber-500" />
+            <span>导出</span>
+          </button>
+          <span className="text-[10px] text-zinc-400 font-mono pl-0.5">{presets.length}</span>
+        </div>
       </div>
+
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onImportFile(file);
+          e.target.value = '';
+        }}
+      />
 
       {presets.length === 0 ? (
         <p className="text-[11px] text-zinc-400 leading-relaxed px-0.5">
-          暂无预设。调好转场/着色器后，点底部「保存预设」即可收录到这里。
+          暂无预设。调好转场 / 着色器 / 时长后，点底部「保存预设」；也可点「导入」加载 JSON。
         </p>
       ) : (
-        <ul className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
+        <ul className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
           {presets.map((preset) => {
             const isActiveLike = preset.shaderSettings.transitionId === activeTransitionId;
+            const timing = timingHint(preset);
             return (
               <li
                 key={preset.id}
-                className="group flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-2 py-1.5 hover:border-zinc-300 transition-colors"
+                className="group flex items-center gap-1 rounded-md border border-zinc-200 bg-white px-2 py-1.5 hover:border-zinc-300 transition-colors"
               >
                 <button
                   type="button"
@@ -66,7 +124,16 @@ export const ShaderPresetPanel: React.FC<ShaderPresetPanelProps> = ({
                   </div>
                   <div className="text-[10px] text-zinc-400 truncate font-mono">
                     {transitionLabel(preset.shaderSettings.transitionId)}
+                    {timing ? ` · ${timing}` : ''}
                   </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDuplicate(preset)}
+                  title="复制为新预设"
+                  className="p-1 rounded text-zinc-400 hover:text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3 h-3" />
                 </button>
                 <button
                   type="button"

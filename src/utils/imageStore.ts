@@ -304,7 +304,7 @@ export async function saveAppPrefs(prefs: AppPrefsInput): Promise<void> {
 }
 
 
-/** User-saved transition + shader preset (no slides/images). */
+/** User-saved transition + shader + timeline (时长) preset (no slides/images). */
 export interface ShaderPreset {
   id: string;
   name: string;
@@ -312,6 +312,8 @@ export interface ShaderPreset {
   updatedAt: number;
   /** Full shader/uniform + transitionId (+ optional customGlsl) */
   shaderSettings: ShaderSettings;
+  /** 时长 / 节奏设置（单张展示 + 转场时长 + loop）— 转场区上方的「时长设置」 */
+  timelineSettings?: TimelineSettings;
 }
 
 /** Clipboard / share payload for「复制配置」. */
@@ -320,15 +322,45 @@ export interface ShaderConfigExport {
   kind: 'gl-web-shader-config';
   exportedAt: string;
   shaderSettings: ShaderSettings;
+  timelineSettings?: TimelineSettings;
 }
 
-export function buildShaderConfigExport(shaderSettings: ShaderSettings): ShaderConfigExport {
+/** File payload for 导入 / 导出全部预设. */
+export interface ShaderPresetsFile {
+  version: 1;
+  kind: 'gl-web-presets';
+  exportedAt: string;
+  presets: ShaderPreset[];
+}
+
+export function buildShaderConfigExport(
+  shaderSettings: ShaderSettings,
+  timelineSettings?: TimelineSettings
+): ShaderConfigExport {
   return {
     version: 1,
     kind: 'gl-web-shader-config',
     exportedAt: new Date().toISOString(),
-    shaderSettings: { ...shaderSettings }
+    shaderSettings: { ...shaderSettings },
+    timelineSettings: timelineSettings ? { ...timelineSettings } : undefined
   };
+}
+
+export function buildPresetsExportFile(presets: ShaderPreset[]): ShaderPresetsFile {
+  return {
+    version: 1,
+    kind: 'gl-web-presets',
+    exportedAt: new Date().toISOString(),
+    presets: presets.map((p) => ({
+      ...p,
+      shaderSettings: { ...p.shaderSettings },
+      timelineSettings: p.timelineSettings ? { ...p.timelineSettings } : undefined
+    }))
+  };
+}
+
+function newPresetId(): string {
+  return `preset_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function sanitizePreset(raw: unknown): ShaderPreset | null {
@@ -344,7 +376,8 @@ function sanitizePreset(raw: unknown): ShaderPreset | null {
     name: r.name.trim() || '未命名预设',
     createdAt,
     updatedAt,
-    shaderSettings: shader
+    shaderSettings: shader,
+    timelineSettings: sanitizeTimelineSettings(r.timelineSettings)
   };
 }
 
@@ -395,18 +428,36 @@ export async function deleteShaderPreset(id: string): Promise<void> {
   db.close();
 }
 
-/** Create a new preset from current shader settings. */
+/** Create a new preset from current shader + timeline settings. */
 export async function createShaderPreset(
   name: string,
-  shaderSettings: ShaderSettings
+  shaderSettings: ShaderSettings,
+  timelineSettings?: TimelineSettings
 ): Promise<ShaderPreset> {
   const now = Date.now();
   const preset: ShaderPreset = {
-    id: `preset_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    id: newPresetId(),
     name: name.trim() || `预设 ${new Date(now).toLocaleString()}`,
     createdAt: now,
     updatedAt: now,
-    shaderSettings: { ...shaderSettings }
+    shaderSettings: { ...shaderSettings },
+    timelineSettings: timelineSettings ? { ...timelineSettings } : undefined
+  };
+  await putShaderPreset(preset);
+  return preset;
+}
+
+/** Duplicate a preset in IDB with a new id and「副本」name. */
+export async function duplicateShaderPreset(source: ShaderPreset): Promise<ShaderPreset> {
+  const now = Date.now();
+  const base = source.name.replace(/\s*副本$/, '').trim() || '未命名预设';
+  const preset: ShaderPreset = {
+    id: newPresetId(),
+    name: `${base} 副本`,
+    createdAt: now,
+    updatedAt: now,
+    shaderSettings: { ...source.shaderSettings },
+    timelineSettings: source.timelineSettings ? { ...source.timelineSettings } : undefined
   };
   await putShaderPreset(preset);
   return preset;
@@ -422,4 +473,67 @@ export async function renameShaderPreset(id: string, name: string): Promise<void
     name: name.trim() || found.name,
     updatedAt: Date.now()
   });
+}
+
+/**
+ * Import presets from a JSON file payload.
+ * Always assigns new ids (additive merge — never overwrites existing by id).
+ * Returns how many were imported.
+ */
+export async function importShaderPresetsFromJson(raw: unknown): Promise<number> {
+  let list: unknown[] = [];
+  if (Array.isArray(raw)) {
+    list = raw;
+  } else if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.presets)) {
+      list = obj.presets;
+    } else if (obj.shaderSettings) {
+      // Single preset / config export
+      list = [obj];
+    }
+  }
+  if (!list.length) throw new Error('JSON 中没有可导入的预设');
+
+  let imported = 0;
+  const now = Date.now();
+  for (const item of list) {
+    const parsed = sanitizePreset(
+      item && typeof item === 'object'
+        ? {
+            ...(item as object),
+            // Force fresh id even if source had one
+            id: newPresetId(),
+            name:
+              typeof (item as { name?: unknown }).name === 'string'
+                ? (item as { name: string }).name
+                : '导入的预设',
+            createdAt: now,
+            updatedAt: now
+          }
+        : null
+    );
+    // Also accept bare { shaderSettings, timelineSettings } without id/name
+    const fallback =
+      parsed ??
+      (() => {
+        if (!item || typeof item !== 'object') return null;
+        const r = item as Record<string, unknown>;
+        const shader = sanitizeShaderSettings(r.shaderSettings);
+        if (!shader) return null;
+        return {
+          id: newPresetId(),
+          name: typeof r.name === 'string' ? r.name.trim() || '导入的预设' : '导入的预设',
+          createdAt: now,
+          updatedAt: now,
+          shaderSettings: shader,
+          timelineSettings: sanitizeTimelineSettings(r.timelineSettings)
+        } satisfies ShaderPreset;
+      })();
+    if (!fallback) continue;
+    await putShaderPreset(fallback);
+    imported += 1;
+  }
+  if (imported === 0) throw new Error('未能解析任何有效预设');
+  return imported;
 }

@@ -24,9 +24,12 @@ import {
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from '../shaders/glTransitions';
 import { ShaderPresetPanel } from './ShaderPresetPanel';
 import {
+  buildPresetsExportFile,
   buildShaderConfigExport,
   createShaderPreset,
   deleteShaderPreset,
+  duplicateShaderPreset,
+  importShaderPresetsFromJson,
   listShaderPresets,
   renameShaderPreset,
   type ShaderPreset
@@ -102,7 +105,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   }, [refreshPresets]);
 
   const handleCopyConfig = useCallback(async () => {
-    const payload = buildShaderConfigExport(shaderSettings);
+    const payload = buildShaderConfigExport(shaderSettings, timelineSettings);
     const json = JSON.stringify(payload, null, 2);
     try {
       await navigator.clipboard.writeText(json);
@@ -124,7 +127,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         showToast('复制失败，请检查浏览器权限');
       }
     }
-  }, [shaderSettings, showToast]);
+  }, [shaderSettings, timelineSettings, showToast]);
 
   const handleSavePreset = useCallback(async () => {
     const defaultName = (() => {
@@ -134,7 +137,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           : GL_TRANSITIONS_CATALOG.find((x) => x.id === shaderSettings.transitionId)?.name;
       return t ? `${t} 预设` : '我的预设';
     })();
-    const name = window.prompt('为当前转场 + 着色器配置命名：', defaultName);
+    const name = window.prompt('为当前转场 + 着色器 + 时长配置命名：', defaultName);
     if (name == null) return;
     const trimmed = name.trim();
     if (!trimmed) {
@@ -142,17 +145,20 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       return;
     }
     try {
-      await createShaderPreset(trimmed, shaderSettings);
+      await createShaderPreset(trimmed, shaderSettings, timelineSettings);
       await refreshPresets();
       showToast(`已保存预设「${trimmed}」`);
     } catch (err: any) {
       showToast('保存失败: ' + (err?.message || '未知错误'));
     }
-  }, [shaderSettings, refreshPresets, showToast]);
+  }, [shaderSettings, timelineSettings, refreshPresets, showToast]);
 
   const handleApplyPreset = useCallback(
     (preset: ShaderPreset) => {
       onUpdateShader({ ...preset.shaderSettings });
+      if (preset.timelineSettings) {
+        onUpdateTimeline({ ...preset.timelineSettings });
+      }
       if (preset.shaderSettings.transitionId === 'custom') {
         setTransitionCategory('custom');
       } else if (transitionCategory === 'custom') {
@@ -161,7 +167,57 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       onPreviewTransition?.();
       showToast(`已应用「${preset.name}」`);
     },
-    [onUpdateShader, onPreviewTransition, showToast, transitionCategory]
+    [onUpdateShader, onUpdateTimeline, onPreviewTransition, showToast, transitionCategory]
+  );
+
+  const handleDuplicatePreset = useCallback(
+    async (preset: ShaderPreset) => {
+      try {
+        const dup = await duplicateShaderPreset(preset);
+        await refreshPresets();
+        // Also put JSON on clipboard for convenience
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(dup, null, 2));
+        } catch {
+          /* ignore clipboard */
+        }
+        showToast(`已复制「${dup.name}」`);
+      } catch (err: any) {
+        showToast('复制失败: ' + (err?.message || '未知错误'));
+      }
+    },
+    [refreshPresets, showToast]
+  );
+
+  const handleExportPresets = useCallback(() => {
+    if (!presets.length) {
+      showToast('暂无预设可导出');
+      return;
+    }
+    const payload = buildPresetsExportFile(presets);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `gl-web-presets-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`已导出 ${presets.length} 个预设`);
+  }, [presets, showToast]);
+
+  const handleImportPresetsFile = useCallback(
+    async (file: File) => {
+      try {
+        const text = await file.text();
+        const raw = JSON.parse(text) as unknown;
+        const count = await importShaderPresetsFromJson(raw);
+        await refreshPresets();
+        showToast(`已导入 ${count} 个预设`);
+      } catch (err: any) {
+        showToast('导入失败: ' + (err?.message || '无效 JSON'));
+      }
+    },
+    [refreshPresets, showToast]
   );
 
   const handleRenamePreset = useCallback(
@@ -571,8 +627,11 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               presets={presets}
               activeTransitionId={shaderSettings.transitionId}
               onApply={handleApplyPreset}
+              onDuplicate={handleDuplicatePreset}
               onRename={handleRenamePreset}
               onDelete={handleDeletePreset}
+              onExport={handleExportPresets}
+              onImportFile={handleImportPresetsFile}
             />
 
             {/* Search and Category Filter Chips */}

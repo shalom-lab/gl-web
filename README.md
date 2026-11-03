@@ -53,7 +53,7 @@ Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist
 
 ## 配置复制与着色器预设
 
-- **复制配置**（侧栏底栏左侧）：把当前 `transitionId` + 着色器 uniform 参数复制为 JSON（`kind: gl-web-shader-config`）。
-- **保存预设**（侧栏底栏右侧）：命名后写入 IndexedDB `presets` store（仅转场+着色器，不含图片）。
-- **我的预设**面板：转场库搜索区上方；支持应用 / 重命名 / 删除。
+- **复制配置**（侧栏底栏左侧）：当前 `transitionId` + 着色器 uniforms + 时长设置 → JSON（`kind: gl-web-shader-config`）。
+- **保存预设**（侧栏底栏右侧）：写入 IndexedDB `presets`（转场 + 着色器 + `timelineSettings` 时长，不含图片）。
+- **我的预设**面板（转场库上方）：应用 / **复制(副本)** / 重命名 / 删除；标题栏 **导入** / **导出** JSON（`kind: gl-web-presets`）。导入始终分配新 id（追加合并）。
 
