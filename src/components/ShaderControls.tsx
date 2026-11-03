@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShaderSettings, TimelineSettings, ColorTone } from '../types';
+import { STYLE_PRESETS } from '../utils/stylePresets';
 import { Sliders, Clock, Sparkles, Wand2 } from 'lucide-react';
 
 interface ShaderControlsProps {
@@ -123,27 +124,23 @@ export const ShaderControls: React.FC<ShaderControlsProps> = ({
             );
           })}
 
-          {/* Color Tone */}
+          {/* Color Tone — labels aligned with STYLE_PRESETS (legacy panel) */}
           <div className="sm:col-span-2">
-            <div className="text-zinc-600 mb-1">色调基调</div>
+            <div className="text-zinc-600 mb-1">风格色调</div>
             <div className="grid grid-cols-5 gap-1.5">
-              {[
-                { id: 0, label: '自然电影' },
-                { id: 1, label: '暖阳金辉' },
-                { id: 2, label: '冷色银幕' },
-                { id: 3, label: '经典黑白' },
-                { id: 4, label: '鲜润生机' }
-              ].map((tone) => (
+              {STYLE_PRESETS.filter((p) => p.id !== 'clean').map((preset) => (
                 <button
-                  key={tone.id}
-                  onClick={() => updateSetting('colorTone', tone.id as ColorTone)}
+                  key={preset.id}
+                  type="button"
+                  title={preset.tip}
+                  onClick={() => updateSetting('colorTone', preset.patch.colorTone)}
                   className={`py-1 px-1.5 text-[11px] rounded border font-medium transition-colors ${
-                    shaderSettings.colorTone === tone.id
+                    shaderSettings.colorTone === preset.patch.colorTone
                       ? 'border-zinc-900 bg-zinc-900 text-white'
                       : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
                   }`}
                 >
-                  {tone.label}
+                  {preset.label}
                 </button>
               ))}
             </div>

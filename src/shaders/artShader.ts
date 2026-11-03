@@ -41,7 +41,7 @@ export function buildFragmentShader(transitionGlsl: string): string {
   uniform float uScanReveal;
   uniform float uGlitch;
   uniform float uEdgeBlur;
-  uniform int uColorTone;              // 0: 自然电影, 1: 暖阳金辉, 2: 冷色银幕, 3: 黑白电影, 4: 鲜润生机
+  uniform int uColorTone;              // 0: 电影质感, 1: 暖阳胶片, 2: 北欧清冷, 3: 黑白纪实, 4: 鲜润生机
 
   varying vec2 vUv;
 

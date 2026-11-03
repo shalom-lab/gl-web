@@ -41,6 +41,11 @@ import { RightSidebar } from './components/RightSidebar';
 import { ExportModal } from './components/ExportModal';
 import { ExportJobChip, type ExportJobState } from './components/ExportJobChip';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from './shaders/glTransitions';
+import {
+  applyStylePreset,
+  matchStylePresetId,
+  type StylePresetId
+} from './utils/stylePresets';
 import { terminateFfmpeg } from './utils/ffmpegMp4';
 
 export default function App() {
@@ -348,86 +353,14 @@ export default function App() {
     [slides, handleSlidesChange]
   );
 
-  // Style Presets
-  const handleApplyPreset = (presetName: string) => {
-    let newShader = { ...shaderSettings };
-    if (presetName === 'cinematic') {
-      newShader = {
-        ...newShader,
-        breathIntensity: 0.35,
-        chromaticAberration: 0.15,
-        fluidDistortion: 0.12,
-        filmGrain: 0.22,
-        vignette: 0.35,
-        bloomGlow: 0.25,
-        scanReveal: 0.30,
-        glitch: 0.0,
-        edgeBlur: 0.18,
-        colorTone: 0,
-        transitionId: 'crossfade'
-      };
-    } else if (presetName === 'warm') {
-      newShader = {
-        ...newShader,
-        breathIntensity: 0.4,
-        chromaticAberration: 0.1,
-        fluidDistortion: 0.08,
-        filmGrain: 0.28,
-        vignette: 0.42,
-        bloomGlow: 0.45,
-        scanReveal: 0.2,
-        glitch: 0.0,
-        edgeBlur: 0.22,
-        colorTone: 1,
-        transitionId: 'burn'
-      };
-    } else if (presetName === 'nordic') {
-      newShader = {
-        ...newShader,
-        breathIntensity: 0.25,
-        chromaticAberration: 0.18,
-        fluidDistortion: 0.16,
-        filmGrain: 0.15,
-        vignette: 0.28,
-        bloomGlow: 0.2,
-        scanReveal: 0.4,
-        glitch: 0.0,
-        edgeBlur: 0.15,
-        colorTone: 2,
-        transitionId: 'directionalwarp'
-      };
-    } else if (presetName === 'noir') {
-      newShader = {
-        ...newShader,
-        breathIntensity: 0.3,
-        chromaticAberration: 0.05,
-        fluidDistortion: 0.05,
-        filmGrain: 0.45,
-        vignette: 0.55,
-        bloomGlow: 0.15,
-        scanReveal: 0.25,
-        glitch: 0.0,
-        edgeBlur: 0.25,
-        colorTone: 3,
-        transitionId: 'fade'
-      };
-    } else if (presetName === 'clean') {
-      newShader = {
-        ...newShader,
-        breathIntensity: 0.0,
-        chromaticAberration: 0.0,
-        fluidDistortion: 0.0,
-        filmGrain: 0.0,
-        vignette: 0.0,
-        bloomGlow: 0.0,
-        scanReveal: 0.0,
-        glitch: 0.0,
-        edgeBlur: 0.0,
-        colorTone: 0,
-        transitionId: 'crossfade'
-      };
-    }
-    handleShaderChange(newShader);
+  // Style presets — single catalog shared with header + effects panel
+  const activeStylePresetId = useMemo(
+    () => matchStylePresetId(shaderSettings),
+    [shaderSettings]
+  );
+
+  const handleApplyPreset = (presetId: string) => {
+    handleShaderChange(applyStylePreset(shaderSettings, presetId as StylePresetId));
   };
 
   // Fullscreen
@@ -798,6 +731,7 @@ export default function App() {
         onAspectRatioChange={setAspectRatio}
         customAspect={customAspect}
         onCustomAspectChange={setCustomAspect}
+        activeStylePresetId={activeStylePresetId}
         onApplyPreset={handleApplyPreset}
         onOpenExport={() => setExportModalOpen(true)}
         onToggleFullscreen={handleToggleFullscreen}
@@ -952,6 +886,8 @@ export default function App() {
           onDeleteSlides={handleDeleteSlides}
           shaderSettings={shaderSettings}
           onUpdateShader={handleShaderChange}
+          activeStylePresetId={activeStylePresetId}
+          onApplyStylePreset={handleApplyPreset}
           timelineSettings={timelineSettings}
           onUpdateTimeline={handleTimelineChange}
           aspectRatio={aspectRatio}

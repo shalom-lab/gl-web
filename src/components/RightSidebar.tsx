@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AspectRatioPreset,
-  ColorTone,
   ImageSlide,
   ShaderSettings,
   TimelineSettings
@@ -11,6 +10,7 @@ import {
   DEFAULT_CUSTOM_ASPECT,
   type CustomAspect
 } from '../utils/aspectRatio';
+import { STYLE_PRESETS, type StylePresetId } from '../utils/stylePresets';
 import {
   Sparkles,
   Images,
@@ -56,6 +56,8 @@ interface RightSidebarProps {
   onDeleteSlides: (ids: string[]) => void;
   shaderSettings: ShaderSettings;
   onUpdateShader: (settings: ShaderSettings) => void;
+  activeStylePresetId: StylePresetId | null;
+  onApplyStylePreset: (id: string) => void;
   timelineSettings: TimelineSettings;
   onUpdateTimeline: (settings: TimelineSettings) => void;
   aspectRatio: AspectRatioPreset;
@@ -80,6 +82,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   onDeleteSlides,
   shaderSettings,
   onUpdateShader,
+  activeStylePresetId,
+  onApplyStylePreset,
   timelineSettings,
   onUpdateTimeline,
   aspectRatio,
@@ -579,29 +583,32 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               })}
             </div>
 
-            {/* Color Tone */}
+            {/* Style presets — same STYLE_PRESETS catalog as header */}
             <div className="pt-2 border-t border-zinc-100">
-              <div className="font-medium text-zinc-700 mb-2">色彩基调滤镜</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                {[
-                  { id: 0, label: '自然电影' },
-                  { id: 1, label: '暖阳金辉' },
-                  { id: 2, label: '冷色银幕' },
-                  { id: 3, label: '经典黑白' },
-                  { id: 4, label: '鲜润生机' }
-                ].map((tone) => (
-                  <button
-                    key={tone.id}
-                    onClick={() => updateShader('colorTone', tone.id as ColorTone)}
-                    className={`py-1.5 px-2 rounded-md border text-center font-medium transition-colors cursor-pointer ${
-                      shaderSettings.colorTone === tone.id
-                        ? 'border-zinc-900 bg-zinc-900 text-white shadow-2xs'
-                        : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
-                    }`}
-                  >
-                    {tone.label}
-                  </button>
-                ))}
+              <div className="font-medium text-zinc-700 mb-2">风格预设</div>
+              <p className="text-[10px] text-zinc-400 mb-2 leading-relaxed">
+                与顶部「风格预设」同一套：色调 + 胶片特效一并套用。
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5" role="group" aria-label="风格预设">
+                {STYLE_PRESETS.map((preset) => {
+                  const active = activeStylePresetId === preset.id;
+                  return (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      title={preset.tip}
+                      aria-pressed={active}
+                      onClick={() => onApplyStylePreset(preset.id)}
+                      className={`py-1.5 px-2 rounded-md border text-center font-medium transition-colors cursor-pointer ${
+                        active
+                          ? 'border-zinc-900 bg-zinc-900 text-white shadow-2xs'
+                          : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

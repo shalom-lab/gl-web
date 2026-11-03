@@ -2,13 +2,15 @@ import React from 'react';
 import { AspectRatioPreset } from '../types';
 import { Film, Download, Maximize2, Github } from 'lucide-react';
 import type { CustomAspect } from '../utils/aspectRatio';
+import { STYLE_PRESETS, type StylePresetId } from '../utils/stylePresets';
 
 interface HeaderProps {
   aspectRatio: AspectRatioPreset;
   onAspectRatioChange: (aspect: AspectRatioPreset) => void;
   customAspect: CustomAspect;
   onCustomAspectChange: (next: CustomAspect) => void;
-  onApplyPreset: (name: string) => void;
+  activeStylePresetId: StylePresetId | null;
+  onApplyPreset: (id: string) => void;
   onOpenExport: () => void;
   onToggleFullscreen: () => void;
 }
@@ -18,6 +20,7 @@ export const Header: React.FC<HeaderProps> = ({
   onAspectRatioChange,
   customAspect,
   onCustomAspectChange,
+  activeStylePresetId,
   onApplyPreset,
   onOpenExport,
   onToggleFullscreen
@@ -125,24 +128,32 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
-        {/* Style presets */}
-        <div className="hidden lg:flex items-center gap-1.5 pl-2 border-l border-zinc-200">
+        {/* Style presets — shared STYLE_PRESETS catalog */}
+        <div
+          className="hidden lg:flex items-center gap-1.5 pl-2 border-l border-zinc-200"
+          role="group"
+          aria-label="风格预设"
+        >
           <span className="text-[11px] text-zinc-400 font-medium">风格预设:</span>
-          {[
-            { id: 'cinematic', label: '电影质感' },
-            { id: 'warm', label: '暖阳胶片' },
-            { id: 'nordic', label: '北欧清冷' },
-            { id: 'noir', label: '黑白纪实' },
-            { id: 'clean', label: '原图纯净' }
-          ].map((preset) => (
-            <button
-              key={preset.id}
-              onClick={() => onApplyPreset(preset.id)}
-              className="px-2 py-1 text-xs rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors cursor-pointer"
-            >
-              {preset.label}
-            </button>
-          ))}
+          {STYLE_PRESETS.map((preset) => {
+            const active = activeStylePresetId === preset.id;
+            return (
+              <button
+                type="button"
+                key={preset.id}
+                onClick={() => onApplyPreset(preset.id)}
+                title={preset.tip}
+                aria-pressed={active}
+                className={`px-2 py-1 text-xs rounded-md border font-medium transition-colors cursor-pointer ${
+                  active
+                    ? 'border-zinc-900 bg-zinc-900 text-white shadow-xs'
+                    : 'border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
+                }`}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 

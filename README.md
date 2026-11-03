@@ -78,3 +78,7 @@ Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist
 - **自定义 a:b**：整数比例，写入 IndexedDB `prefs.customAspect`。
 - 预览与导出均为 **contain / letterbox**，不拉伸。
 
+## 风格预设
+
+顶部 Header 与侧栏「特效」里的风格芯片共用 `src/utils/stylePresets.ts`（同一名称、同一套参数、同一高亮）。点击会写入色调 `colorTone` 与胶片类 uniforms；微调滑杆后若与任一预设不完全匹配则两边都不高亮。
+
