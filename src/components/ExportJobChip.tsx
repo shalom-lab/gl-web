@@ -37,6 +37,10 @@ function downloadLabel(type: ExportFormat | null): string {
   return '下载文件';
 }
 
+/** Fixed corner shell — width/right reserved so progress + thumbs never shift layout. */
+const CHIP_SHELL =
+  'fixed bottom-4 right-4 z-50 w-[22rem] max-w-[calc(100vw-2rem)]';
+
 export const ExportJobChip: React.FC<ExportJobChipProps> = ({
   job,
   onCancel,
@@ -46,26 +50,30 @@ export const ExportJobChip: React.FC<ExportJobChipProps> = ({
 }) => {
   const { status, progress, minimized, resultType, errorMessage } = job;
   const percent = progress?.percent ?? 0;
+  const currentFrame = progress?.currentFrame ?? 0;
+  const totalFrames = progress?.totalFrames ?? 0;
 
   if (minimized && status === 'running') {
     return (
-      <div className="fixed bottom-4 left-4 z-50">
-        <button
-          type="button"
-          onClick={onToggleMinimize}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-zinc-900 text-white text-xs font-medium shadow-lg border border-zinc-700 hover:bg-zinc-800 transition-colors cursor-pointer"
-          title="展开导出进度"
-        >
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
-          <span>导出中 {percent}%</span>
-          <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
-        </button>
+      <div className={CHIP_SHELL}>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onToggleMinimize}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-zinc-900 text-white text-xs font-medium shadow-lg border border-zinc-700 hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="展开导出进度"
+          >
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />
+            <span className="tabular-nums">导出中 {percent}%</span>
+            <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed bottom-4 left-4 z-50 w-[min(100%-2rem,22rem)]">
+    <div className={CHIP_SHELL}>
       <div className="rounded-xl border border-zinc-200 bg-white shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 bg-zinc-50/80">
           <div className="flex items-center gap-2 min-w-0">
@@ -115,11 +123,11 @@ export const ExportJobChip: React.FC<ExportJobChipProps> = ({
         <div className="px-3 py-2.5 space-y-2">
           {status === 'running' && (
             <>
-              <div className="flex items-center justify-between text-[11px] gap-2">
-                <span className="text-zinc-600 truncate">
+              <div className="flex items-center justify-between text-[11px] gap-2 min-h-[1.125rem]">
+                <span className="text-zinc-600 truncate min-w-0">
                   {progress?.statusText || '准备中…'}
                 </span>
-                <span className="font-mono font-semibold text-zinc-900 shrink-0">
+                <span className="font-mono font-semibold text-zinc-900 shrink-0 tabular-nums w-10 text-right">
                   {percent}%
                 </span>
               </div>
@@ -129,28 +137,31 @@ export const ExportJobChip: React.FC<ExportJobChipProps> = ({
                   style={{ width: `${percent}%` }}
                 />
               </div>
-              {progress && (
-                <div className="text-[10px] text-zinc-400 font-mono">
-                  {progress.currentFrame} / {progress.totalFrames} 帧
+              {/* Always reserve thumb + meta row so previewUrl / frame counts never reflow */}
+              <div className="flex items-end justify-between gap-2 min-h-[1.25rem]">
+                <div className="text-[10px] text-zinc-400 font-mono tabular-nums">
+                  {currentFrame} / {totalFrames} 帧
                 </div>
-              )}
-              {progress?.previewUrl && (
-                <div className="h-20 rounded-md overflow-hidden bg-zinc-900 border border-zinc-200">
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  className="px-2.5 py-1 text-[11px] font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md cursor-pointer shrink-0"
+                >
+                  取消导出
+                </button>
+              </div>
+              <div className="h-20 w-full rounded-md overflow-hidden bg-zinc-900 border border-zinc-200 shrink-0">
+                {progress?.previewUrl ? (
                   <img
                     src={progress.previewUrl}
                     alt="export preview"
                     className="w-full h-full object-contain"
                   />
-                </div>
-              )}
-              <div className="flex justify-end pt-0.5">
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="px-2.5 py-1 text-[11px] font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-md cursor-pointer"
-                >
-                  取消导出
-                </button>
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-500">
+                    预览帧…
+                  </div>
+                )}
               </div>
               <p className="text-[10px] text-zinc-400 leading-relaxed">
                 已冻结开始时的图片与参数快照，可继续编辑预览，不影响本次导出。
