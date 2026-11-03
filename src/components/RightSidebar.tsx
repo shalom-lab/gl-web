@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from '../shaders/glTransitions';
 import { ShaderPresetPanel } from './ShaderPresetPanel';
+import { AppDialog } from './AppDialog';
 import {
   buildPresetsExportFile,
   buildShaderConfigExport,
@@ -84,6 +85,14 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
   const [toast, setToast] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
+  type PresetDialogState =
+    | { kind: 'closed' }
+    | { kind: 'save'; defaultName: string }
+    | { kind: 'rename'; preset: ShaderPreset }
+    | { kind: 'delete'; preset: ShaderPreset };
+
+  const [presetDialog, setPresetDialog] = useState<PresetDialogState>({ kind: 'closed' });
+
   const showToast = useCallback((message: string) => {
     setToast(message);
     if (toastTimerRef.current != null) {
@@ -129,7 +138,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   }, [shaderSettings, timelineSettings, showToast]);
 
-  const handleSavePreset = useCallback(async () => {
+  const handleSavePreset = useCallback(() => {
     const defaultName = (() => {
       const t =
         shaderSettings.transitionId === 'custom'
@@ -137,21 +146,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           : GL_TRANSITIONS_CATALOG.find((x) => x.id === shaderSettings.transitionId)?.name;
       return t ? `${t} 预设` : '我的预设';
     })();
-    const name = window.prompt('为当前转场 + 着色器 + 时长配置命名：', defaultName);
-    if (name == null) return;
-    const trimmed = name.trim();
-    if (!trimmed) {
-      showToast('预设名称不能为空');
-      return;
-    }
-    try {
-      await createShaderPreset(trimmed, shaderSettings, timelineSettings);
-      await refreshPresets();
-      showToast(`已保存预设「${trimmed}」`);
-    } catch (err: any) {
-      showToast('保存失败: ' + (err?.message || '未知错误'));
-    }
-  }, [shaderSettings, timelineSettings, refreshPresets, showToast]);
+    setPresetDialog({ kind: 'save', defaultName });
+  }, [shaderSettings.transitionId]);
 
   const handleApplyPreset = useCallback(
     (preset: ShaderPreset) => {
@@ -220,38 +216,71 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
     [refreshPresets, showToast]
   );
 
-  const handleRenamePreset = useCallback(
-    async (preset: ShaderPreset) => {
-      const name = window.prompt('重命名预设：', preset.name);
-      if (name == null) return;
-      const trimmed = name.trim();
-      if (!trimmed) {
-        showToast('名称不能为空');
+  const handleRenamePreset = useCallback((preset: ShaderPreset) => {
+    setPresetDialog({ kind: 'rename', preset });
+  }, []);
+
+  const handleDeletePreset = useCallback((preset: ShaderPreset) => {
+    setPresetDialog({ kind: 'delete', preset });
+  }, []);
+
+  const closePresetDialog = useCallback(() => {
+    setPresetDialog({ kind: 'closed' });
+  }, []);
+
+  const handlePresetDialogConfirm = useCallback(
+    async (value?: string) => {
+      const dialog = presetDialog;
+      if (dialog.kind === 'closed') return;
+
+      if (dialog.kind === 'save') {
+        const trimmed = (value ?? '').trim();
+        if (!trimmed) {
+          showToast('预设名称不能为空');
+          return;
+        }
+        setPresetDialog({ kind: 'closed' });
+        try {
+          await createShaderPreset(trimmed, shaderSettings, timelineSettings);
+          await refreshPresets();
+          showToast(`已保存预设「${trimmed}」`);
+        } catch (err: any) {
+          showToast('保存失败: ' + (err?.message || '未知错误'));
+        }
         return;
       }
-      try {
-        await renameShaderPreset(preset.id, trimmed);
-        await refreshPresets();
-        showToast('已重命名');
-      } catch (err: any) {
-        showToast('重命名失败: ' + (err?.message || '未知错误'));
-      }
-    },
-    [refreshPresets, showToast]
-  );
 
-  const handleDeletePreset = useCallback(
-    async (preset: ShaderPreset) => {
-      if (!window.confirm(`确定删除预设「${preset.name}」？`)) return;
-      try {
-        await deleteShaderPreset(preset.id);
-        await refreshPresets();
-        showToast('已删除预设');
-      } catch (err: any) {
-        showToast('删除失败: ' + (err?.message || '未知错误'));
+      if (dialog.kind === 'rename') {
+        const trimmed = (value ?? '').trim();
+        if (!trimmed) {
+          showToast('名称不能为空');
+          return;
+        }
+        const id = dialog.preset.id;
+        setPresetDialog({ kind: 'closed' });
+        try {
+          await renameShaderPreset(id, trimmed);
+          await refreshPresets();
+          showToast('已重命名');
+        } catch (err: any) {
+          showToast('重命名失败: ' + (err?.message || '未知错误'));
+        }
+        return;
+      }
+
+      if (dialog.kind === 'delete') {
+        const id = dialog.preset.id;
+        setPresetDialog({ kind: 'closed' });
+        try {
+          await deleteShaderPreset(id);
+          await refreshPresets();
+          showToast('已删除预设');
+        } catch (err: any) {
+          showToast('删除失败: ' + (err?.message || '未知错误'));
+        }
       }
     },
-    [refreshPresets, showToast]
+    [presetDialog, shaderSettings, timelineSettings, refreshPresets, showToast]
   );
 
   const updateShader = <K extends keyof ShaderSettings>(key: K, value: ShaderSettings[K]) => {
@@ -874,6 +903,49 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           </button>
         </div>
       </div>
+
+      <AppDialog
+        isOpen={presetDialog.kind !== 'closed'}
+        mode={presetDialog.kind === 'delete' ? 'confirm' : 'prompt'}
+        title={
+          presetDialog.kind === 'save'
+            ? '保存预设'
+            : presetDialog.kind === 'rename'
+              ? '重命名预设'
+              : presetDialog.kind === 'delete'
+                ? '删除预设'
+                : ''
+        }
+        description={
+          presetDialog.kind === 'save'
+            ? '为当前转场、着色器参数与时长设置命名，保存后可在「我的预设」中一键应用。'
+            : presetDialog.kind === 'rename'
+              ? '修改预设显示名称（不会改变其中的转场 / 着色器 / 时长内容）。'
+              : presetDialog.kind === 'delete'
+                ? `确定删除预设「${presetDialog.preset.name}」？此操作不可撤销。`
+                : undefined
+        }
+        defaultValue={
+          presetDialog.kind === 'save'
+            ? presetDialog.defaultName
+            : presetDialog.kind === 'rename'
+              ? presetDialog.preset.name
+              : ''
+        }
+        placeholder="输入预设名称"
+        confirmLabel={
+          presetDialog.kind === 'save'
+            ? '保存'
+            : presetDialog.kind === 'rename'
+              ? '保存'
+              : presetDialog.kind === 'delete'
+                ? '删除'
+                : '确定'
+        }
+        danger={presetDialog.kind === 'delete'}
+        onCancel={closePresetDialog}
+        onConfirm={(v) => void handlePresetDialogConfirm(v)}
+      />
     </aside>
   );
 };
