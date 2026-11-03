@@ -9,7 +9,11 @@ import {
 import { getDefaultImageSlides } from './utils/proceduralImages';
 import {
   clearUploadedSlides,
+  clampSidebarWidth,
+  DEFAULT_SIDEBAR_WIDTH,
+  loadAppPrefs,
   loadUploadedSlides,
+  saveAppPrefs,
   saveUploadedSlides
 } from './utils/imageStore';
 import { RendererEngine, ProgressInfo } from './core/rendererEngine';
@@ -34,9 +38,10 @@ export default function App() {
   // Active right sidebar tab: 'transitions' | 'effects' | 'slides'
   const [sidebarTab, setSidebarTab] = useState<'transitions' | 'effects' | 'slides'>('transitions');
 
-  // Resizable sidebar width (px)
-  const [sidebarWidth, setSidebarWidth] = useState<number>(440);
+  // Resizable sidebar width (px) — hydrated from IndexedDB prefs
+  const [sidebarWidth, setSidebarWidth] = useState<number>(DEFAULT_SIDEBAR_WIDTH);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [prefsReady, setPrefsReady] = useState(false);
 
   // Shader effect settings (Default tuned for subtle, cinematic, filmic feel)
   const [shaderSettings, setShaderSettings] = useState<ShaderSettings>({
@@ -71,19 +76,29 @@ export default function App() {
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
   const [resultType, setResultType] = useState<'png-zip' | 'webm-video' | null>(null);
 
-  // Restore uploaded gallery from IndexedDB (one durable copy) before engine init
+  // Restore gallery + layout prefs from IndexedDB (one durable copy each) before engine init
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const stored = await loadUploadedSlides();
+      const [stored, prefs] = await Promise.all([loadUploadedSlides(), loadAppPrefs()]);
       if (cancelled) return;
+      if (prefs?.sidebarWidth != null) {
+        setSidebarWidth(clampSidebarWidth(prefs.sidebarWidth));
+      }
       setSlides(stored && stored.length > 0 ? stored : getDefaultImageSlides());
       setSlidesReady(true);
+      setPrefsReady(true);
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Persist sidebar layout proportion whenever it changes (after hydrate)
+  useEffect(() => {
+    if (!prefsReady) return;
+    void saveAppPrefs({ sidebarWidth });
+  }, [sidebarWidth, prefsReady]);
 
   // Initialize Three.js WebGL Engine after slides are ready
   useEffect(() => {
@@ -375,9 +390,7 @@ export default function App() {
 
     const handleMouseMove = (e: MouseEvent) => {
       const newWidth = window.innerWidth - e.clientX;
-      const minWidth = 340;
-      const maxWidth = Math.max(minWidth, Math.floor(window.innerWidth * 0.7));
-      setSidebarWidth(Math.max(minWidth, Math.min(newWidth, maxWidth)));
+      setSidebarWidth(clampSidebarWidth(newWidth));
     };
 
     const handleMouseUp = () => {
@@ -556,7 +569,7 @@ export default function App() {
             e.preventDefault();
             setIsDragging(true);
           }}
-          onDoubleClick={() => setSidebarWidth(440)}
+          onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
           title="左右拖拽调节控制面板宽度 (双击重置为 440px)"
           className={`relative z-20 w-3 shrink-0 -mx-1.5 cursor-col-resize group flex items-center justify-center transition-colors select-none ${
             isDragging ? 'bg-amber-500/20' : 'bg-transparent hover:bg-zinc-300/40'

@@ -1,14 +1,18 @@
 /**
- * IndexedDB persistence for uploaded gallery images.
- * One durable copy per slide in a single object store — survives refresh/reload.
- * Prefer IndexedDB over localStorage for image blobs.
+ * IndexedDB persistence for uploaded gallery images and app prefs.
+ * One durable copy per concern — survives refresh/reload.
+ * Prefer IndexedDB over localStorage for image blobs and non-secret prefs.
  */
 
 import type { ImageSlide } from '../types';
 
 const DB_NAME = 'gl-web';
-const DB_VERSION = 1;
-const STORE_NAME = 'slides';
+const DB_VERSION = 2;
+const SLIDES_STORE = 'slides';
+const PREFS_STORE = 'prefs';
+
+/** Singleton key for the prefs record (one durable copy). */
+export const APP_PREFS_KEY = 'app';
 
 export interface StoredSlide {
   id: string;
@@ -20,13 +24,25 @@ export interface StoredSlide {
   order: number;
 }
 
+/** App layout / UI preferences stored alongside slides in the same IDB. */
+export interface AppPrefs {
+  key: typeof APP_PREFS_KEY;
+  /** Right sidebar width from the vertical splitter handle (px). */
+  sidebarWidth: number;
+}
+
+export const DEFAULT_SIDEBAR_WIDTH = 440;
+
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(SLIDES_STORE)) {
+        db.createObjectStore(SLIDES_STORE, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(PREFS_STORE)) {
+        db.createObjectStore(PREFS_STORE, { keyPath: 'key' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -61,8 +77,8 @@ export async function saveUploadedSlides(slides: ImageSlide[]): Promise<void> {
 
   const db = await openDb();
   await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
-    const store = tx.objectStore(STORE_NAME);
+    const tx = db.transaction(SLIDES_STORE, 'readwrite');
+    const store = tx.objectStore(SLIDES_STORE);
     store.clear();
     for (const record of records) {
       store.put(record);
@@ -79,8 +95,8 @@ export async function loadUploadedSlides(): Promise<ImageSlide[] | null> {
   try {
     const db = await openDb();
     const records = await new Promise<StoredSlide[]>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readonly');
-      const store = tx.objectStore(STORE_NAME);
+      const tx = db.transaction(SLIDES_STORE, 'readonly');
+      const store = tx.objectStore(SLIDES_STORE);
       const req = store.getAll();
       req.onsuccess = () => resolve((req.result as StoredSlide[]) ?? []);
       req.onerror = () => reject(req.error ?? new Error('读取图片失败'));
@@ -111,13 +127,63 @@ export async function clearUploadedSlides(): Promise<void> {
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).clear();
+      const tx = db.transaction(SLIDES_STORE, 'readwrite');
+      tx.objectStore(SLIDES_STORE).clear();
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error ?? new Error('清除图片失败'));
     });
     db.close();
   } catch (err) {
     console.warn('[imageStore] 清除 IndexedDB 失败:', err);
+  }
+}
+
+/** Clamp sidebar width to the same bounds used by the splitter drag handler. */
+export function clampSidebarWidth(width: number, viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 1280): number {
+  const minWidth = 340;
+  const maxWidth = Math.max(minWidth, Math.floor(viewportWidth * 0.7));
+  if (!Number.isFinite(width)) return DEFAULT_SIDEBAR_WIDTH;
+  return Math.max(minWidth, Math.min(Math.round(width), maxWidth));
+}
+
+/** Load app prefs (sidebar layout proportion, etc.); null if missing / unavailable. */
+export async function loadAppPrefs(): Promise<AppPrefs | null> {
+  try {
+    const db = await openDb();
+    const record = await new Promise<AppPrefs | undefined>((resolve, reject) => {
+      const tx = db.transaction(PREFS_STORE, 'readonly');
+      const req = tx.objectStore(PREFS_STORE).get(APP_PREFS_KEY);
+      req.onsuccess = () => resolve(req.result as AppPrefs | undefined);
+      req.onerror = () => reject(req.error ?? new Error('读取偏好失败'));
+    });
+    db.close();
+    if (!record || typeof record.sidebarWidth !== 'number') return null;
+    return {
+      key: APP_PREFS_KEY,
+      sidebarWidth: record.sidebarWidth
+    };
+  } catch (err) {
+    console.warn('[imageStore] 无法从 IndexedDB 恢复偏好:', err);
+    return null;
+  }
+}
+
+/** Persist app prefs (one durable copy under key `app`). */
+export async function saveAppPrefs(prefs: Pick<AppPrefs, 'sidebarWidth'>): Promise<void> {
+  try {
+    const db = await openDb();
+    const record: AppPrefs = {
+      key: APP_PREFS_KEY,
+      sidebarWidth: clampSidebarWidth(prefs.sidebarWidth)
+    };
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(PREFS_STORE, 'readwrite');
+      tx.objectStore(PREFS_STORE).put(record);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error('保存偏好失败'));
+    });
+    db.close();
+  } catch (err) {
+    console.warn('[imageStore] 保存偏好失败:', err);
   }
 }
