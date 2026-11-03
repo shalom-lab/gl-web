@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ImageSlide } from '../types';
 import { Upload, RotateCcw, Image as ImageIcon } from 'lucide-react';
 
@@ -22,6 +22,8 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
   const batchInputRef = useRef<HTMLInputElement>(null);
   const singleInputRef = useRef<HTMLInputElement>(null);
   const pendingReplaceIndex = useRef<number>(0);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const activeThumbRef = useRef<HTMLDivElement>(null);
 
   const handleSingleReplaceClick = (e: React.MouseEvent, index: number) => {
     e.stopPropagation();
@@ -44,17 +46,40 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
     e.target.value = '';
   };
 
+  useEffect(() => {
+    const thumb = activeThumbRef.current;
+    const strip = stripRef.current;
+    if (!thumb || !strip) return;
+
+    const thumbLeft = thumb.offsetLeft;
+    const thumbRight = thumbLeft + thumb.offsetWidth;
+    const viewLeft = strip.scrollLeft;
+    const viewRight = viewLeft + strip.clientWidth;
+    const pad = 8;
+
+    if (thumbLeft < viewLeft + pad) {
+      strip.scrollTo({ left: Math.max(0, thumbLeft - pad), behavior: 'smooth' });
+    } else if (thumbRight > viewRight - pad) {
+      strip.scrollTo({
+        left: thumbRight - strip.clientWidth + pad,
+        behavior: 'smooth'
+      });
+    }
+  }, [currentSlideIndex, slides.length]);
+
   return (
-    <div className="bg-zinc-50 border-b border-zinc-200 px-4 py-2.5">
+    <div className="bg-zinc-50 border-b border-zinc-200 px-4 py-2.5 min-w-0 w-full">
       {/* Top row actions */}
-      <div className="flex items-center justify-between text-xs mb-2">
-        <div className="flex items-center gap-1.5 text-zinc-600 font-medium">
-          <ImageIcon className="w-3.5 h-3.5 text-zinc-500" />
-          <span>图片序列 ({slides.length} 张)</span>
-          <span className="text-[11px] text-zinc-400 font-normal">点击跳转 · 悬停可单张替换</span>
+      <div className="flex items-center justify-between text-xs mb-2 gap-2 min-w-0">
+        <div className="flex items-center gap-1.5 text-zinc-600 font-medium min-w-0">
+          <ImageIcon className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+          <span className="shrink-0">图片序列 ({slides.length} 张)</span>
+          <span className="text-[11px] text-zinc-400 font-normal truncate hidden sm:inline">
+            点击跳转 · 悬停可单张替换 · 横向滑动查看更多
+          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => batchInputRef.current?.click()}
             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-zinc-700 bg-white border border-zinc-200 rounded-md hover:bg-zinc-100 hover:text-zinc-900 shadow-2xs transition-colors cursor-pointer"
@@ -91,13 +116,18 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
         className="hidden"
       />
 
-      {/* Thumbnails strip */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+      {/* Thumbnails strip — scrollable when many slides */}
+      <div
+        ref={stripRef}
+        className="flex items-center gap-2 min-w-0 w-full overflow-x-auto overflow-y-hidden pb-1 scrollbar-thin-x"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {slides.map((slide, index) => {
           const isActive = index === currentSlideIndex;
           return (
             <div
               key={slide.id || index}
+              ref={isActive ? activeThumbRef : undefined}
               onClick={() => onSelectSlide(index)}
               className={`group relative shrink-0 w-24 sm:w-28 h-16 rounded-lg overflow-hidden cursor-pointer border transition-all ${
                 isActive
@@ -137,6 +167,7 @@ export const SlideStrip: React.FC<SlideStripProps> = ({
             </div>
           );
         })}
+        <div className="shrink-0 w-1 h-16" aria-hidden />
       </div>
     </div>
   );

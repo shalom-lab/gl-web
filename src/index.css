@@ -1,1 +1,24 @@
 @import "tailwindcss";
+
+/* Thin, usable horizontal scrollbar for slide strips (WebKit + Firefox) */
+.scrollbar-thin-x {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(161 161 170) transparent;
+}
+
+.scrollbar-thin-x::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scrollbar-thin-x::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin-x::-webkit-scrollbar-thumb {
+  background-color: rgb(161 161 170);
+  border-radius: 9999px;
+}
+
+.scrollbar-thin-x::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(113 113 122);
+}

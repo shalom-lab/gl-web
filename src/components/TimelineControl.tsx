@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Play, Pause, SkipBack, SkipForward, Repeat } from 'lucide-react';
 import { ImageSlide } from '../types';
 
@@ -35,6 +35,9 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
   onPrevSlide,
   onNextSlide
 }) => {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const activeThumbRef = useRef<HTMLButtonElement>(null);
+
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60);
     const s = Math.floor(secs % 60);
@@ -50,12 +53,34 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
 
   const currentSlide = slides[currentSlideIndex];
 
+  // Keep the active thumbnail in view when the playhead advances or user jumps
+  useEffect(() => {
+    const thumb = activeThumbRef.current;
+    const strip = stripRef.current;
+    if (!thumb || !strip) return;
+
+    const thumbLeft = thumb.offsetLeft;
+    const thumbRight = thumbLeft + thumb.offsetWidth;
+    const viewLeft = strip.scrollLeft;
+    const viewRight = viewLeft + strip.clientWidth;
+    const pad = 8;
+
+    if (thumbLeft < viewLeft + pad) {
+      strip.scrollTo({ left: Math.max(0, thumbLeft - pad), behavior: 'smooth' });
+    } else if (thumbRight > viewRight - pad) {
+      strip.scrollTo({
+        left: thumbRight - strip.clientWidth + pad,
+        behavior: 'smooth'
+      });
+    }
+  }, [currentSlideIndex, slides.length]);
+
   return (
-    <div className="bg-white border-t border-zinc-200 px-4 py-3 select-none">
+    <div className="bg-white border-t border-zinc-200 px-4 py-3 select-none min-w-0 w-full shrink-0">
       {/* Upper row: Playback buttons & slide status */}
-      <div className="flex items-center justify-between gap-4 mb-2.5">
+      <div className="flex items-center justify-between gap-4 mb-2.5 min-w-0">
         {/* Playback Controls */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={onPrevSlide}
             title="上一张图片 (方向左键)"
@@ -92,12 +117,12 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
         </div>
 
         {/* Current status info & transition badge */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className="font-semibold text-zinc-900">
+        <div className="flex items-center gap-2 text-xs min-w-0 overflow-hidden">
+          <span className="font-semibold text-zinc-900 truncate">
             {currentSlide ? currentSlide.title : '未加载图片'}
           </span>
           <span
-            className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+            className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium ${
               isTransitioning
                 ? 'bg-amber-100 text-amber-800 border border-amber-200'
                 : 'bg-zinc-100 text-zinc-600 border border-zinc-200'
@@ -109,7 +134,7 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
             <button
               onClick={onOpenTransitionsTab}
               title="点击在右侧查看/切换 24 款转场效果"
-              className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 text-[10px] font-medium transition-colors cursor-pointer border border-zinc-200/60"
+              className="hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-100 hover:bg-zinc-200/80 text-zinc-700 text-[10px] font-medium transition-colors cursor-pointer border border-zinc-200/60 shrink-0"
             >
               <span>转场:</span>
               <strong className="text-zinc-900 font-semibold">{currentTransitionName}</strong>
@@ -118,7 +143,7 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
         </div>
 
         {/* Time display */}
-        <div className="text-xs font-mono text-zinc-500 tabular-nums">
+        <div className="text-xs font-mono text-zinc-500 tabular-nums shrink-0">
           <span className="text-zinc-900 font-semibold">{formatTime(currentTime)}</span>
           <span className="text-zinc-300 mx-1">/</span>
           <span>{formatTime(totalDuration)}</span>
@@ -126,7 +151,7 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
       </div>
 
       {/* Scrubber progress bar */}
-      <div className="relative w-full h-4 flex items-center cursor-pointer group mb-3">
+      <div className="relative w-full min-w-0 h-4 flex items-center cursor-pointer group mb-3">
         <input
           type="range"
           min={0}
@@ -153,13 +178,18 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
         </div>
       </div>
 
-      {/* Mini Thumbnails Tape (quick jump) */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
+      {/* Mini Thumbnails Tape — horizontally scrollable when many slides */}
+      <div
+        ref={stripRef}
+        className="flex items-center gap-1.5 min-w-0 w-full overflow-x-auto overflow-y-hidden pb-1 scrollbar-thin-x"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {slides.map((slide, i) => {
           const isActive = i === currentSlideIndex;
           return (
             <button
               key={slide.id || i}
+              ref={isActive ? activeThumbRef : undefined}
               onClick={() => onSeek(i * period)}
               title={`跳转至: ${slide.title}`}
               className={`relative shrink-0 h-9 w-14 rounded overflow-hidden border transition-all cursor-pointer ${
@@ -176,6 +206,8 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
             </button>
           );
         })}
+        {/* Trailing spacer so the last thumb isn't flush-clipped at the edge */}
+        <div className="shrink-0 w-1 h-9" aria-hidden />
       </div>
     </div>
   );
