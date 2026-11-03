@@ -1,6 +1,6 @@
 import React from 'react';
 import { AspectRatioPreset } from '../types';
-import { Film, Download, Maximize2 } from 'lucide-react';
+import { Film, Download, Maximize2, Github } from 'lucide-react';
 import type { CustomAspect } from '../utils/aspectRatio';
 
 interface HeaderProps {
@@ -161,13 +161,24 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenExport}
-          aria-label="导出视频或 PNG 序列"
+          title="导出视频 / PNG 序列"
+          aria-label="导出"
           className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 text-xs font-medium shadow-xs transition-colors cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">导出视频 / PNG序列</span>
-          <span className="sm:hidden">导出</span>
+          <span>导出</span>
         </button>
+
+        <a
+          href="https://github.com/shalom-lab/gl-web"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="在 GitHub 打开仓库"
+          aria-label="GitHub 仓库"
+          className="p-1.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors"
+        >
+          <Github className="w-4 h-4" />
+        </a>
       </div>
     </header>
   );

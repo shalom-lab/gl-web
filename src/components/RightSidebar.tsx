@@ -1034,10 +1034,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           <button
             type="button"
             onClick={onOpenExport}
+            title="导出视频 / PNG 序列"
+            aria-label="导出"
             className="flex-1 min-w-0 py-2.5 px-3 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 font-medium text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="truncate">导出视频 / PNG 逐帧序列</span>
+            <span>导出</span>
           </button>
 
           <button
