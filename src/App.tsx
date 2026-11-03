@@ -41,6 +41,7 @@ import { RightSidebar } from './components/RightSidebar';
 import { ExportModal } from './components/ExportModal';
 import { ExportJobChip, type ExportJobState } from './components/ExportJobChip';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from './shaders/glTransitions';
+import { terminateFfmpeg } from './utils/ffmpegMp4';
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -649,9 +650,11 @@ export default function App() {
 
   const handleCancelExport = useCallback(() => {
     exportEngineRef.current?.cancelExport();
-    void import('./utils/ffmpegMp4')
-      .then((m) => m.terminateFfmpeg())
-      .catch(() => {});
+    try {
+      terminateFfmpeg();
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const handleDismissExportJob = useCallback(() => {

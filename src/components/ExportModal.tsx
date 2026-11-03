@@ -69,7 +69,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         <div className="p-5 space-y-4">
           {isBusy && (
             <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
-              已有导出任务在后台运行。请等待完成或在左下角进度条中取消后再开始新的导出。
+              已有导出任务在后台运行。请等待完成或在右下角进度条中取消后再开始新的导出。
             </div>
           )}
 
@@ -92,7 +92,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-zinc-500 leading-relaxed">
-                  PNG 逐帧 + 页内 ffmpeg.wasm 封装 H.264。开始后在左下角查看进度。
+                  PNG 逐帧 + 页内 ffmpeg.wasm 封装 H.264。开始后在右下角查看进度。
                 </p>
               </div>
 

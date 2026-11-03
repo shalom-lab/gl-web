@@ -1,13 +1,16 @@
 /**
- * Lazy-loaded ffmpeg.wasm helper: PNG frame sequence → H.264 MP4.
+ * ffmpeg.wasm helper: PNG frame sequence → H.264 MP4.
  * Core assets are served from `${BASE_URL}ffmpeg/` (copied by Vite plugin)
  * and CacheFirst'd by public/sw.js after the first fetch.
+ *
+ * Note: do NOT pass `classWorkerURL` from a `?url` import of the package
+ * worker source — that file still has relative `./const.js` imports and 404s
+ * under /gl-web/assets/. Omit it so Vite's rewrite of the package's
+ * `new URL('./worker.js', import.meta.url)` points at the bundled worker chunk.
  */
 
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
-// Vite resolves worker to a URL string compatible with /gl-web/ base + Pages deploy
-import classWorkerURL from '@ffmpeg/ffmpeg/worker?url';
 
 let ffmpegSingleton: FFmpeg | null = null;
 let loadPromise: Promise<FFmpeg> | null = null;
@@ -35,16 +38,24 @@ export async function ensureFfmpegLoaded(
     onProgress?.({ percent: 2, statusText: '正在加载 ffmpeg.wasm 核心…' });
 
     const base = ffmpegBaseUrl();
+    // Resolve against the site origin so /gl-web/ffmpeg/… works on GitHub Pages
+    // even when the app was opened without a trailing slash.
+    const coreSrc = new URL(`${base}/ffmpeg-core.js`, window.location.origin).href;
+    const wasmSrc = new URL(`${base}/ffmpeg-core.wasm`, window.location.origin).href;
+
     // Blob URLs keep the worker same-origin friendly; SW still caches the original fetches.
-    const coreURL = await toBlobURL(`${base}/ffmpeg-core.js`, 'text/javascript');
-    onProgress?.({ percent: 40, statusText: '正在下载 ffmpeg-core.wasm（首次约 30MB，之后走 SW 缓存）…' });
-    const wasmURL = await toBlobURL(`${base}/ffmpeg-core.wasm`, 'application/wasm');
+    const coreURL = await toBlobURL(coreSrc, 'text/javascript');
+    onProgress?.({
+      percent: 40,
+      statusText: '正在下载 ffmpeg-core.wasm（首次约 30MB，之后走 SW 缓存）…'
+    });
+    const wasmURL = await toBlobURL(wasmSrc, 'application/wasm');
     onProgress?.({ percent: 85, statusText: '正在初始化 WebAssembly…' });
 
+    // Intentionally omit classWorkerURL — use Vite-bundled default worker.
     await ffmpeg.load({
       coreURL,
-      wasmURL,
-      classWorkerURL
+      wasmURL
     });
 
     onProgress?.({ percent: 100, statusText: 'ffmpeg.wasm 已就绪' });

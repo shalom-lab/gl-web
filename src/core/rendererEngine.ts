@@ -3,6 +3,12 @@ import JSZip from 'jszip';
 import { ExportSettings, ImageSlide, ShaderSettings, TimelineSettings } from '../types';
 import { vertexShader, buildFragmentShader, getTransitionGlsl } from '../shaders/artShader';
 import { getExportDimensionsFromAspect, resolveAspectValue, DEFAULT_CUSTOM_ASPECT } from '../utils/aspectRatio';
+import {
+  encodePngSequenceToMp4,
+  ensureFfmpegLoaded,
+  terminateFfmpeg,
+  writePngFrame
+} from '../utils/ffmpegMp4';
 
 function getExportDimensions(settings: ExportSettings): [number, number] {
   const aspect =
@@ -414,13 +420,6 @@ export class RendererEngine {
     const fps = settings.fps;
     const totalFrames = Math.max(1, Math.round(totalDuration * fps));
     const [targetW, targetH] = getExportDimensions(settings);
-
-    const {
-      encodePngSequenceToMp4,
-      ensureFfmpegLoaded,
-      terminateFfmpeg,
-      writePngFrame
-    } = await import('../utils/ffmpegMp4');
 
     let ffmpeg;
     try {

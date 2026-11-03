@@ -1,11 +1,13 @@
 /* ArtLens Service Worker — caches ffmpeg.wasm core assets for GitHub Pages (/gl-web/).
  * Scope is /gl-web/ when registered with { scope: base }.
- * Strategy: CacheFirst for /ffmpeg/ffmpeg-core.js|wasm only; everything else network.
+ * Strategy: CacheFirst for /ffmpeg/ffmpeg-core.js|wasm only.
+ * IMPORTANT: never intercept /assets/*.js HTML — hashed Vite chunks must always
+ * hit the network so deploys cannot leave the app pointing at a deleted chunk.
  */
-const CACHE_NAME = 'gl-web-ffmpeg-v1';
+const CACHE_NAME = 'gl-web-ffmpeg-v2';
 const FFMPEG_ASSET_RE = /\/ffmpeg\/ffmpeg-core\.(js|wasm)$/;
 
-self.addEventListener('install', (event) => {
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 

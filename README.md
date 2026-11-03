@@ -37,7 +37,8 @@ Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist
 
 - 文件：`public/sw.js`（随 dist 发布）
 - 注册：`src/main.tsx` 在生产环境以 `scope = import.meta.env.BASE_URL`（`/gl-web/`）注册，兼容 GitHub Pages 子路径
-- 策略：仅对路径匹配 `/ffmpeg/ffmpeg-core.(js|wasm)` 的 GET 请求做 **CacheFirst**（cache 名 `gl-web-ffmpeg-v1`）；其余请求不拦截，避免 stale HTML/JS
+- 策略：仅对路径匹配 `/ffmpeg/ffmpeg-core.(js|wasm)` 的 GET 请求做 **CacheFirst**（cache 名 `gl-web-ffmpeg-v2`）；其余请求不拦截，避免 stale HTML/JS
+- MP4 helper 为**静态导入**（避免 GitHub Pages 上对 hashed `ffmpegMp4-*.js` 的 dynamic import 失败）；`classWorkerURL` 不传，使用 Vite 重写后的打包 worker（勿用 `worker?url` 裸源文件，否则会 404 `./const.js`）
 - 验证：DevTools → Application → Cache Storage，首次导出后再开一次应命中缓存
 
 ## IndexedDB 持久化
