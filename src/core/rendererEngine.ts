@@ -476,9 +476,10 @@ export class RendererEngine {
 
         await writePngFrame(ffmpeg, frame + 1, frameBlob);
 
+        // Throttle preview thumbs — full-res toDataURL every few frames stalls the main thread.
         let previewUrl: string | undefined;
-        if (frame % 5 === 0 || frame === totalFrames - 1) {
-          previewUrl = exportCanvas.toDataURL('image/jpeg', 0.6);
+        if (frame % 15 === 0 || frame === totalFrames - 1) {
+          previewUrl = exportCanvas.toDataURL('image/jpeg', 0.45);
         }
 
         // Render phase maps to 15%–75% of overall progress
@@ -596,9 +597,10 @@ export class RendererEngine {
         folder.file(filename, frameBlob);
 
         // Preview thumbnail every 5 frames
+        // Throttle preview thumbs — full-res toDataURL every few frames stalls the main thread.
         let previewUrl: string | undefined;
-        if (frame % 5 === 0 || frame === totalFrames - 1) {
-          previewUrl = exportCanvas.toDataURL('image/jpeg', 0.6);
+        if (frame % 15 === 0 || frame === totalFrames - 1) {
+          previewUrl = exportCanvas.toDataURL('image/jpeg', 0.45);
         }
 
         onProgress({

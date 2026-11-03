@@ -98,6 +98,7 @@ export default function App() {
   const [exportPrefs, setExportPrefs] = useState<ExportPrefs>(DEFAULT_EXPORT_PREFS);
   const [exportJob, setExportJob] = useState<ExportJobState | null>(null);
   const exportEngineRef = useRef<RendererEngine | null>(null);
+  const wasPlayingWhenHiddenRef = useRef(false);
   const exportToastTimerRef = useRef<number | null>(null);
   const [exportToast, setExportToast] = useState<string | null>(null);
 
@@ -438,12 +439,23 @@ export default function App() {
     }
   };
 
-  // Keyboard controls
+  // Keyboard controls (ignore when typing in fields / contentEditable)
   useEffect(() => {
+    const isTypingTarget = (t: EventTarget | null) => {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      return (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        t.isContentEditable
+      );
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
+      if (isTypingTarget(e.target)) return;
+      if (exportModalOpen) return;
+
       if (e.code === 'Space') {
         e.preventDefault();
         handleTogglePlay();
@@ -453,12 +465,56 @@ export default function App() {
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
         handleSeek(Math.min(engineRef.current?.getTotalDuration() || 10, currentTime + 1.0));
+      } else if (e.code === 'Home') {
+        e.preventDefault();
+        handleSeek(0);
+      } else if (e.code === 'End') {
+        e.preventDefault();
+        handleSeek(engineRef.current?.getTotalDuration() || 0);
+      } else if (e.key === '[' || e.code === 'Comma') {
+        e.preventDefault();
+        handlePrevSlide();
+      } else if (e.key === ']' || e.code === 'Period') {
+        e.preventDefault();
+        handleNextSlide();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentTime]);
+  }, [currentTime, exportModalOpen]);
+
+  // Warn before closing tab while a background export is running
+  useEffect(() => {
+    if (exportJob?.status !== 'running') return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [exportJob?.status]);
+
+  // Pause live preview when the tab is hidden to save GPU; resume if it was playing
+  useEffect(() => {
+    const onVis = () => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      if (document.hidden) {
+        wasPlayingWhenHiddenRef.current = isPlaying;
+        if (isPlaying) {
+          engine.pause();
+          setIsPlaying(false);
+        }
+      } else if (wasPlayingWhenHiddenRef.current) {
+        wasPlayingWhenHiddenRef.current = false;
+        engine.play();
+        setIsPlaying(true);
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [isPlaying]);
 
   // Handle draggable splitter between left preview and right sidebar
   useEffect(() => {
@@ -561,9 +617,17 @@ export default function App() {
       });
 
       const onProgress = (info: ProgressInfo) => {
-        setExportJob((prev) =>
-          prev && prev.status === 'running' ? { ...prev, progress: info } : prev
-        );
+        setExportJob((prev) => {
+          if (!prev || prev.status !== 'running') return prev;
+          return {
+            ...prev,
+            progress: {
+              ...info,
+              // Keep last thumb when this tick skipped preview (throttled in engine)
+              previewUrl: info.previewUrl ?? prev.progress?.previewUrl
+            }
+          };
+        });
       };
 
       try {
@@ -712,7 +776,11 @@ export default function App() {
 
   if (!slidesReady) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-zinc-100 text-zinc-600 text-sm">
+      <div
+        className="flex h-screen w-screen items-center justify-center bg-zinc-100 text-zinc-600 text-sm"
+        role="status"
+        aria-live="polite"
+      >
         正在加载图片…
       </div>
     );
@@ -751,6 +819,7 @@ export default function App() {
                 onClick={zoomOut}
                 disabled={previewZoom <= PREVIEW_ZOOM_MIN}
                 title="缩小 (Ctrl + 滚轮)"
+                aria-label="缩小预览"
                 className="p-1.5 rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
               >
                 <ZoomOut className="w-3.5 h-3.5" />
@@ -765,6 +834,7 @@ export default function App() {
                   setPreviewZoom((z) => clampPreviewZoom(z + delta));
                 }}
                 title="点击重置 100%；悬停滚轮精细调节 (±1%)"
+                aria-label={`预览缩放 ${Math.round(previewZoom * 100)}%，点击重置`}
                 className="min-w-[3.25rem] px-1.5 py-1 rounded-md text-[11px] font-mono font-semibold tabular-nums text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
               >
                 {Math.round(previewZoom * 100)}%
@@ -774,6 +844,7 @@ export default function App() {
                 onClick={zoomIn}
                 disabled={previewZoom >= PREVIEW_ZOOM_MAX}
                 title="放大 (Ctrl + 滚轮)"
+                aria-label="放大预览"
                 className="p-1.5 rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -783,6 +854,7 @@ export default function App() {
                 type="button"
                 onClick={zoomReset}
                 title="适应 / 重置缩放"
+                aria-label="重置预览缩放"
                 className="p-1.5 rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
@@ -804,6 +876,8 @@ export default function App() {
                 className="w-full h-full block cursor-pointer"
                 onClick={handleTogglePlay}
                 title="点击画面暂停/播放"
+                role="img"
+                aria-label="预览画布，点击暂停或播放"
               />
 
               {/* Minimal non-intrusive status overlay badge in corner */}
@@ -849,7 +923,8 @@ export default function App() {
           }}
           onDoubleClick={() => setSidebarWidth(DEFAULT_SIDEBAR_WIDTH)}
           title="左右拖拽调节控制面板宽度 (双击重置为 440px)"
-          className={`relative z-20 w-3 shrink-0 -mx-1.5 cursor-col-resize group flex items-center justify-center transition-colors select-none ${
+          aria-hidden="true"
+          className={`relative z-20 w-3 shrink-0 -mx-1.5 cursor-col-resize group hidden md:flex items-center justify-center transition-colors select-none ${
             isDragging ? 'bg-amber-500/20' : 'bg-transparent hover:bg-zinc-300/40'
           }`}
         >

@@ -82,31 +82,39 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
         {/* Playback Controls */}
         <div className="flex items-center gap-1.5 shrink-0">
           <button
+            type="button"
             onClick={onPrevSlide}
-            title="上一张图片 (方向左键)"
+            title="上一张图片 ([)"
+            aria-label="上一张图片"
             className="p-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors cursor-pointer"
           >
             <SkipBack className="w-4 h-4" />
           </button>
 
           <button
+            type="button"
             onClick={onTogglePlay}
-            title={isPlaying ? '暂停 (空格键)' : '播放 (空格键)'}
+            title={isPlaying ? '暂停 (空格)' : '播放 (空格)'}
+            aria-label={isPlaying ? '暂停' : '播放'}
             className="w-8 h-8 rounded-full bg-zinc-900 text-white flex items-center justify-center hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
           >
             {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
           </button>
 
           <button
+            type="button"
             onClick={onNextSlide}
-            title="下一张图片 (方向右键)"
+            title="下一张图片 (])"
+            aria-label="下一张图片"
             className="p-1.5 text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-md transition-colors cursor-pointer"
           >
             <SkipForward className="w-4 h-4" />
           </button>
 
           <button
+            type="button"
             onClick={onToggleLoop}
+            aria-label="循环播放"
             title={loop ? '循环播放已开启' : '单次播放'}
             className={`p-1.5 rounded-md transition-colors cursor-pointer ${
               loop ? 'text-amber-600 bg-amber-50' : 'text-zinc-400 hover:text-zinc-700'

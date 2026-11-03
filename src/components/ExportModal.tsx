@@ -39,27 +39,51 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     onPrefsChange?.({ format, resolution, fps });
   }, [format, resolution, fps, onPrefsChange]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const totalFrames = Math.round(totalDuration * fps);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-xl shadow-xl border border-zinc-200 w-full max-w-lg overflow-hidden flex flex-col">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="export-modal-title"
+        className="bg-white rounded-xl shadow-xl border border-zinc-200 w-full max-w-lg overflow-hidden flex flex-col"
+      >
         <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-zinc-900 text-white flex items-center justify-center">
               <Video className="w-3.5 h-3.5 text-amber-400" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-zinc-900">导出视频 / 逐帧序列</h2>
+              <h2 id="export-modal-title" className="text-sm font-semibold text-zinc-900">导出视频 / 逐帧序列</h2>
               <p className="text-[11px] text-zinc-400">
                 后台导出：开始后可继续编辑，参数会按启动时快照冻结
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="关闭导出面板"
             className="p-1 rounded-md text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -77,7 +101,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <label className="block text-xs font-medium text-zinc-700 mb-2">导出方案选择</label>
             <div className="grid grid-cols-1 gap-3">
               <div
+                role="button"
+                tabIndex={0}
+                aria-pressed={format === 'mp4-wasm'}
                 onClick={() => setFormat('mp4-wasm')}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setFormat('mp4-wasm');
+                  }
+                }}
                 className={`p-3 rounded-lg border cursor-pointer transition-all ${
                   format === 'mp4-wasm'
                     ? 'border-zinc-900 bg-zinc-50/70 ring-1 ring-zinc-900'

@@ -73,7 +73,7 @@ export const ExportJobChip: React.FC<ExportJobChipProps> = ({
   }
 
   return (
-    <div className={CHIP_SHELL}>
+    <div className={CHIP_SHELL} role="status">
       <div className="rounded-xl border border-zinc-200 bg-white shadow-xl overflow-hidden">
         <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-100 bg-zinc-50/80">
           <div className="flex items-center gap-2 min-w-0">
@@ -123,7 +123,11 @@ export const ExportJobChip: React.FC<ExportJobChipProps> = ({
         <div className="px-3 py-2.5 space-y-2">
           {status === 'running' && (
             <>
-              <div className="flex items-center justify-between text-[11px] gap-2 min-h-[1.125rem]">
+              <div
+                className="flex items-center justify-between text-[11px] gap-2 min-h-[1.125rem]"
+                aria-live="polite"
+                aria-atomic="true"
+              >
                 <span className="text-zinc-600 truncate min-w-0">
                   {progress?.statusText || '准备中…'}
                 </span>

@@ -48,7 +48,7 @@ Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist
 | Store | Key | 内容 |
 |-------|-----|------|
 | `slides` | slide `id` | 用户上传图片 blob（一份） |
-| `prefs` | `app` | 非密钥 UI 状态：`sidebarWidth`、`aspectRatio`、`sidebarTab`、`shaderSettings`、`timelineSettings`、`exportPrefs` |
+| `prefs` | `app` | 非密钥 UI 状态：`sidebarWidth`、`aspectRatio`、`customAspect`、`previewZoom`、`sidebarTab`、`shaderSettings`、`timelineSettings`、`exportPrefs` |
 
 刷新后会恢复转场/着色器参数、时间轴、侧栏宽度与导出偏好。「恢复默认」只清空 `slides`。Tokens/secrets 不进 IDB。
 
@@ -57,4 +57,24 @@ Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist
 - **复制配置**（侧栏底栏左侧）：当前 `transitionId` + 着色器 uniforms + 时长设置 → JSON（`kind: gl-web-shader-config`）。
 - **保存预设**（侧栏底栏右侧）：写入 IndexedDB `presets`（转场 + 着色器 + `timelineSettings` 时长，不含图片）。
 - **我的预设**面板（转场库上方）：应用 / **复制(副本)** / 重命名 / 删除；标题栏 **导入** / **导出** JSON（`kind: gl-web-presets`）。导入始终分配新 id（追加合并）。
+
+## 快捷键
+
+| 按键 | 作用 |
+|------|------|
+| `Space` | 播放 / 暂停 |
+| `←` / `→` | 后退 / 前进 1 秒 |
+| `Home` / `End` | 跳到开头 / 结尾 |
+| `[` 或 `,` | 上一张图片 |
+| `]` 或 `.` | 下一张图片 |
+| `Esc` | 关闭导出面板 / 对话框 |
+| `Ctrl` + 滚轮 | 预览缩放 |
+
+导出进行中关闭标签页会弹出浏览器离开确认。后台导出进度在右下角。
+
+## 画幅
+
+- **原图**：图库 slide 宽高比四舍五入到 0.01 后的众数；并列时取最早出现的那张。
+- **自定义 a:b**：整数比例，写入 IndexedDB `prefs.customAspect`。
+- 预览与导出均为 **contain / letterbox**，不拉伸。
 

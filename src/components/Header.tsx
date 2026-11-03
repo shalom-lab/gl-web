@@ -42,8 +42,30 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Middle: Aspect ratio & Style presets */}
       <div className="flex items-center gap-2 min-w-0">
+        {/* Mobile: compact aspect select (chip row is md+) */}
+        <label className="md:hidden flex items-center gap-1.5 text-xs text-zinc-600">
+          <span className="sr-only">画幅比例</span>
+          <select
+            value={aspectRatio}
+            onChange={(e) => onAspectRatioChange(e.target.value as AspectRatioPreset)}
+            className="max-w-[7.5rem] px-2 py-1 rounded-md border border-zinc-200 bg-zinc-50 text-xs font-medium text-zinc-800 focus:outline-hidden focus:ring-1 focus:ring-zinc-900"
+            aria-label="画幅比例"
+          >
+            <option value="16:9">16:9</option>
+            <option value="9:16">9:16</option>
+            <option value="3:4">3:4</option>
+            <option value="4:3">4:3</option>
+            <option value="original">原图</option>
+            <option value="custom">自定义</option>
+          </select>
+        </label>
+
         {/* Aspect Ratio Switch */}
-        <div className="hidden md:flex items-center bg-zinc-100 rounded-lg p-0.5 border border-zinc-200/80 text-xs text-zinc-600">
+        <div
+          className="hidden md:flex items-center bg-zinc-100 rounded-lg p-0.5 border border-zinc-200/80 text-xs text-zinc-600"
+          role="group"
+          aria-label="画幅比例"
+        >
           {[
             { id: '16:9' as const, label: '16:9', tip: '16:9 横屏视频' },
             { id: '9:16' as const, label: '9:16', tip: '9:16 手机短视频' },
@@ -53,9 +75,11 @@ export const Header: React.FC<HeaderProps> = ({
             { id: 'custom' as const, label: '自定义', tip: '自定义整数比例 a:b' }
           ].map((item) => (
             <button
+              type="button"
               key={item.id}
               onClick={() => onAspectRatioChange(item.id)}
               title={item.tip}
+              aria-pressed={aspectRatio === item.id}
               className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                 aspectRatio === item.id
                   ? 'bg-white text-zinc-900 shadow-xs'
@@ -68,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {aspectRatio === 'custom' && (
-          <div className="hidden md:flex items-center gap-1 text-xs text-zinc-600 pl-1">
+          <div className="flex items-center gap-1 text-xs text-zinc-600 pl-1">
             <input
               type="number"
               min={1}
@@ -125,19 +149,24 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Right: Actions */}
       <div className="flex items-center gap-2 shrink-0">
         <button
+          type="button"
           onClick={onToggleFullscreen}
           title="全屏模式"
+          aria-label="全屏模式"
           className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
         >
           <Maximize2 className="w-4 h-4" />
         </button>
 
         <button
+          type="button"
           onClick={onOpenExport}
-          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 text-xs font-medium shadow-xs transition-colors cursor-pointer"
+          aria-label="导出视频或 PNG 序列"
+          className="inline-flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 text-xs font-medium shadow-xs transition-colors cursor-pointer"
         >
           <Download className="w-3.5 h-3.5" />
-          <span>导出视频 / PNG序列</span>
+          <span className="hidden sm:inline">导出视频 / PNG序列</span>
+          <span className="sm:hidden">导出</span>
         </button>
       </div>
     </header>
