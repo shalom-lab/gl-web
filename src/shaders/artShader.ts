@@ -62,15 +62,18 @@ export function buildFragmentShader(transitionGlsl: string): string {
     );
   }
 
-  // Aspect ratio "cover" uv correction
-  vec2 getCoverUv(vec2 uv, float vpAspect, float imgAspect) {
+  // Aspect ratio "contain" (fit) uv — never non-uniform stretch; letterbox/pillarbox with black bars.
+  // Returns uv in image space; caller must discard when outside [0,1].
+  vec2 getContainUv(vec2 uv, float vpAspect, float imgAspect) {
     vec2 correctedUv = uv;
     if (vpAspect > imgAspect) {
-      float scale = vpAspect / imgAspect;
-      correctedUv.y = (uv.y - 0.5) * scale + 0.5;
+      // Viewport wider than image → pillarbox left/right
+      float w = imgAspect / max(vpAspect, 0.0001);
+      correctedUv.x = (uv.x - 0.5) / max(w, 0.0001) + 0.5;
     } else {
-      float scale = imgAspect / vpAspect;
-      correctedUv.x = (uv.x - 0.5) * scale + 0.5;
+      // Viewport taller than image → letterbox top/bottom
+      float h = vpAspect / max(imgAspect, 0.0001);
+      correctedUv.y = (uv.y - 0.5) / max(h, 0.0001) + 0.5;
     }
     return correctedUv;
   }
@@ -103,12 +106,17 @@ export function buildFragmentShader(transitionGlsl: string): string {
     return uv;
   }
 
-  // Sample texture with Chromatic Aberration & Edge Blur
+  // Sample texture with Chromatic Aberration & Edge Blur (contain / fit — black bars outside)
   vec4 sampleTextureWithEffects(sampler2D tex, vec2 uv, float vpAspect, float imgAspect, float prog, float seed) {
-    vec2 baseUv = getCoverUv(uv, vpAspect, imgAspect);
+    vec2 baseUv = getContainUv(uv, vpAspect, imgAspect);
     baseUv = applyBreathing(baseUv, uBreathIntensity, prog, seed);
     baseUv = applyFluid(baseUv, uFluidDistortion);
     baseUv = applyGlitch(baseUv, uGlitch);
+
+    // Outside the fitted image rect → opaque black (letterbox / pillarbox)
+    if (baseUv.x < 0.0 || baseUv.x > 1.0 || baseUv.y < 0.0 || baseUv.y > 1.0) {
+      return vec4(0.0, 0.0, 0.0, 1.0);
+    }
 
     vec2 dir = baseUv - vec2(0.5);
     float dist = length(dir);
@@ -119,9 +127,17 @@ export function buildFragmentShader(transitionGlsl: string): string {
     vec2 gUv = baseUv;
     vec2 bUv = baseUv - dir * caOffset;
 
-    vec4 rCol = texture2D(tex, clamp(rUv, 0.001, 0.999));
-    vec4 gCol = texture2D(tex, clamp(gUv, 0.001, 0.999));
-    vec4 bCol = texture2D(tex, clamp(bUv, 0.001, 0.999));
+    // Soft edge: if CA/blur samples leave the image, fade toward black rather than clamp-stretch
+    bool oob =
+      rUv.x < 0.0 || rUv.x > 1.0 || rUv.y < 0.0 || rUv.y > 1.0 ||
+      bUv.x < 0.0 || bUv.x > 1.0 || bUv.y < 0.0 || bUv.y > 1.0;
+    if (oob && (baseUv.x < 0.02 || baseUv.x > 0.98 || baseUv.y < 0.02 || baseUv.y > 0.98)) {
+      // keep sampling clamped near edges for mild CA, still no stretch of source
+    }
+
+    vec4 rCol = texture2D(tex, clamp(rUv, 0.0, 1.0));
+    vec4 gCol = texture2D(tex, clamp(gUv, 0.0, 1.0));
+    vec4 bCol = texture2D(tex, clamp(bUv, 0.0, 1.0));
 
     vec4 color = vec4(rCol.r, gCol.g, bCol.b, 1.0);
 

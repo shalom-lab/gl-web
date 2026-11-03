@@ -1,10 +1,13 @@
 import React from 'react';
-import { AspectRatioPreset, ShaderSettings } from '../types';
-import { Film, Sparkles, SlidersHorizontal, Download, Maximize2 } from 'lucide-react';
+import { AspectRatioPreset } from '../types';
+import { Film, Download, Maximize2 } from 'lucide-react';
+import type { CustomAspect } from '../utils/aspectRatio';
 
 interface HeaderProps {
   aspectRatio: AspectRatioPreset;
   onAspectRatioChange: (aspect: AspectRatioPreset) => void;
+  customAspect: CustomAspect;
+  onCustomAspectChange: (next: CustomAspect) => void;
   onApplyPreset: (name: string) => void;
   onOpenExport: () => void;
   onToggleFullscreen: () => void;
@@ -13,6 +16,8 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   aspectRatio,
   onAspectRatioChange,
+  customAspect,
+  onCustomAspectChange,
   onApplyPreset,
   onOpenExport,
   onToggleFullscreen
@@ -20,7 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="h-14 border-b border-zinc-200 bg-white/95 px-4 sm:px-6 flex items-center justify-between select-none">
       {/* Brand */}
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2.5 shrink-0">
         <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center shadow-xs">
           <Film className="w-4 h-4 text-amber-400" />
         </div>
@@ -36,19 +41,20 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Middle: Aspect ratio & Style presets */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0">
         {/* Aspect Ratio Switch */}
         <div className="hidden md:flex items-center bg-zinc-100 rounded-lg p-0.5 border border-zinc-200/80 text-xs text-zinc-600">
           {[
-            { id: '16:9', label: '16:9', tip: '16:9 横屏视频' },
-            { id: '9:16', label: '9:16', tip: '9:16 手机短视频' },
-            { id: '3:4', label: '3:4', tip: '3:4 艺术画卷/人像' },
-            { id: '4:3', label: '4:3', tip: '4:3 复古画幅' },
-            { id: '1:1', label: '1:1', tip: '1:1 方形画幅' }
+            { id: '16:9' as const, label: '16:9', tip: '16:9 横屏视频' },
+            { id: '9:16' as const, label: '9:16', tip: '9:16 手机短视频' },
+            { id: '3:4' as const, label: '3:4', tip: '3:4 艺术画卷/人像' },
+            { id: '4:3' as const, label: '4:3', tip: '4:3 复古画幅' },
+            { id: 'original' as const, label: '原图', tip: '按图库中出现最多的图片宽高比（众数）成帧，仍 fit 不拉伸' },
+            { id: 'custom' as const, label: '自定义', tip: '自定义整数比例 a:b' }
           ].map((item) => (
             <button
               key={item.id}
-              onClick={() => onAspectRatioChange(item.id as AspectRatioPreset)}
+              onClick={() => onAspectRatioChange(item.id)}
               title={item.tip}
               className={`px-2.5 py-1 rounded-md font-medium transition-colors cursor-pointer ${
                 aspectRatio === item.id
@@ -60,6 +66,40 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           ))}
         </div>
+
+        {aspectRatio === 'custom' && (
+          <div className="hidden md:flex items-center gap-1 text-xs text-zinc-600 pl-1">
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={customAspect.w}
+              onChange={(e) =>
+                onCustomAspectChange({
+                  w: Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1)),
+                  h: customAspect.h
+                })
+              }
+              className="w-10 px-1 py-0.5 rounded border border-zinc-200 bg-white text-center font-mono text-[11px] focus:outline-hidden focus:ring-1 focus:ring-zinc-900"
+              title="自定义宽度份数"
+            />
+            <span className="text-zinc-400 font-medium">:</span>
+            <input
+              type="number"
+              min={1}
+              max={99}
+              value={customAspect.h}
+              onChange={(e) =>
+                onCustomAspectChange({
+                  w: customAspect.w,
+                  h: Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1))
+                })
+              }
+              className="w-10 px-1 py-0.5 rounded border border-zinc-200 bg-white text-center font-mono text-[11px] focus:outline-hidden focus:ring-1 focus:ring-zinc-900"
+              title="自定义高度份数"
+            />
+          </div>
+        )}
 
         {/* Style presets */}
         <div className="hidden lg:flex items-center gap-1.5 pl-2 border-l border-zinc-200">
@@ -74,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               key={preset.id}
               onClick={() => onApplyPreset(preset.id)}
-              className="px-2 py-1 text-xs rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors"
+              className="px-2 py-1 text-xs rounded-md border border-zinc-200 text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900 transition-colors cursor-pointer"
             >
               {preset.label}
             </button>
@@ -83,11 +123,11 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <button
           onClick={onToggleFullscreen}
           title="全屏模式"
-          className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded-lg transition-colors"
+          className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded-lg transition-colors cursor-pointer"
         >
           <Maximize2 className="w-4 h-4" />
         </button>

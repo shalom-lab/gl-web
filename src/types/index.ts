@@ -30,7 +30,8 @@ export interface TimelineSettings {
   loop: boolean;
 }
 
-export type AspectRatioPreset = '16:9' | '9:16' | '3:4' | '4:3' | '1:1';
+/** Frame aspect mode. 「原图」= dominant slide aspect; 「自定义」= customAspect a:b. */
+export type AspectRatioPreset = '16:9' | '9:16' | '3:4' | '4:3' | 'original' | 'custom';
 
 export type ExportFormat = 'mp4-wasm' | 'png-zip' | 'webm-video';
 
@@ -39,6 +40,8 @@ export interface ExportSettings {
   resolution: '1080p' | '720p';
   fps: 30 | 60;
   aspectRatio?: AspectRatioPreset;
+  /** Resolved numeric width/height used for export frame size (required for original/custom). */
+  aspectValue?: number;
 }
 
 /** Persisted export UI prefs (non-secret). */

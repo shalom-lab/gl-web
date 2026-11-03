@@ -18,6 +18,7 @@ import {
   DEFAULT_SIDEBAR_WIDTH,
   loadAppPrefs,
   loadUploadedSlides,
+  PREVIEW_ZOOM_FINE_STEP,
   PREVIEW_ZOOM_MAX,
   PREVIEW_ZOOM_MIN,
   PREVIEW_ZOOM_STEP,
@@ -25,6 +26,13 @@ import {
   saveUploadedSlides,
   type SidebarTab
 } from './utils/imageStore';
+import {
+  clampCustomAspect,
+  DEFAULT_CUSTOM_ASPECT,
+  getStageLayout,
+  resolveAspectValue,
+  type CustomAspect
+} from './utils/aspectRatio';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { RendererEngine, ProgressInfo, snapshotExportState } from './core/rendererEngine';
 import { Header } from './components/Header';
@@ -45,6 +53,7 @@ export default function App() {
 
   // Aspect ratio presets
   const [aspectRatio, setAspectRatio] = useState<AspectRatioPreset>('16:9');
+  const [customAspect, setCustomAspect] = useState<CustomAspect>(DEFAULT_CUSTOM_ASPECT);
 
   // Active right sidebar tab: 'transitions' | 'effects' | 'slides'
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('transitions');
@@ -101,6 +110,7 @@ export default function App() {
         setSidebarWidth(clampSidebarWidth(prefs.sidebarWidth));
       }
       if (prefs?.aspectRatio) setAspectRatio(prefs.aspectRatio);
+      if (prefs?.customAspect) setCustomAspect(clampCustomAspect(prefs.customAspect));
       if (prefs?.sidebarTab) setSidebarTab(prefs.sidebarTab);
       if (prefs?.shaderSettings) setShaderSettings(prefs.shaderSettings);
       if (prefs?.timelineSettings) setTimelineSettings(prefs.timelineSettings);
@@ -122,6 +132,7 @@ export default function App() {
       void saveAppPrefs({
         sidebarWidth,
         aspectRatio,
+        customAspect,
         sidebarTab,
         shaderSettings,
         timelineSettings,
@@ -133,6 +144,7 @@ export default function App() {
   }, [
     sidebarWidth,
     aspectRatio,
+    customAspect,
     sidebarTab,
     shaderSettings,
     timelineSettings,
@@ -519,7 +531,12 @@ export default function App() {
       const snap = snapshotExportState(slides, shaderSettings, timelineSettings);
       const settingsWithAspect: ExportSettings = {
         ...settings,
-        aspectRatio: settings.aspectRatio ?? aspectRatio
+        aspectRatio: settings.aspectRatio ?? aspectRatio,
+        aspectValue: resolveAspectValue(
+          settings.aspectRatio ?? aspectRatio,
+          snap.slides,
+          customAspect
+        )
       };
 
       const exporter = RendererEngine.createOffscreenExporter(
@@ -624,6 +641,7 @@ export default function App() {
       shaderSettings,
       timelineSettings,
       aspectRatio,
+      customAspect,
       downloadExportBlob,
       showExportToast
     ]
@@ -681,23 +699,13 @@ export default function App() {
 
   const totalDuration = engineRef.current?.getTotalDuration() || 52;
 
-  // Aspect ratio css classes for the left viewport
-  const aspectClass = useMemo(() => {
-    switch (aspectRatio) {
-      case '16:9':
-        return 'aspect-video max-w-5xl max-h-[72vh]';
-      case '9:16':
-        return 'aspect-[9/16] max-w-sm max-h-[72vh]';
-      case '3:4':
-        return 'aspect-[3/4] max-w-md max-h-[72vh]';
-      case '4:3':
-        return 'aspect-[4/3] max-w-2xl max-h-[72vh]';
-      case '1:1':
-        return 'aspect-square max-w-lg max-h-[72vh]';
-      default:
-        return 'aspect-video max-w-5xl max-h-[72vh]';
-    }
-  }, [aspectRatio]);
+  /** Numeric frame aspect for CSS + WebGL viewport (原图 = slide众数, 自定义 = a:b). */
+  const frameAspect = useMemo(
+    () => resolveAspectValue(aspectRatio, slides, customAspect),
+    [aspectRatio, slides, customAspect]
+  );
+
+  const stageLayout = useMemo(() => getStageLayout(frameAspect), [frameAspect]);
 
   if (!slidesReady) {
     return (
@@ -717,6 +725,8 @@ export default function App() {
       <Header
         aspectRatio={aspectRatio}
         onAspectRatioChange={setAspectRatio}
+        customAspect={customAspect}
+        onCustomAspectChange={setCustomAspect}
         onApplyPreset={handleApplyPreset}
         onOpenExport={() => setExportModalOpen(true)}
         onToggleFullscreen={handleToggleFullscreen}
@@ -745,7 +755,13 @@ export default function App() {
               <button
                 type="button"
                 onClick={zoomReset}
-                title="重置为 100%"
+                onWheel={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const delta = e.deltaY > 0 ? -PREVIEW_ZOOM_FINE_STEP : PREVIEW_ZOOM_FINE_STEP;
+                  setPreviewZoom((z) => clampPreviewZoom(z + delta));
+                }}
+                title="点击重置 100%；悬停滚轮精细调节 (±1%)"
                 className="min-w-[3.25rem] px-1.5 py-1 rounded-md text-[11px] font-mono font-semibold tabular-nums text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
               >
                 {Math.round(previewZoom * 100)}%
@@ -773,10 +789,11 @@ export default function App() {
             <div
               ref={containerRef}
               style={{
+                ...stageLayout,
                 transform: `scale(${previewZoom})`,
                 transformOrigin: 'center center'
               }}
-              className={`relative w-full ${aspectClass} rounded-xl overflow-hidden bg-zinc-950 shadow-md border border-zinc-300/80 flex items-center justify-center transition-transform duration-150`}
+              className="relative rounded-xl overflow-hidden bg-zinc-950 shadow-md border border-zinc-300/80 flex items-center justify-center transition-transform duration-150"
             >
               {/* Three.js WebGL Canvas */}
               <canvas

@@ -1,23 +1,15 @@
 import * as THREE from 'three';
 import JSZip from 'jszip';
-import { AspectRatioPreset, ExportSettings, ImageSlide, ShaderSettings, TimelineSettings } from '../types';
+import { ExportSettings, ImageSlide, ShaderSettings, TimelineSettings } from '../types';
 import { vertexShader, buildFragmentShader, getTransitionGlsl } from '../shaders/artShader';
+import { getExportDimensionsFromAspect, resolveAspectValue, DEFAULT_CUSTOM_ASPECT } from '../utils/aspectRatio';
 
-function getExportDimensions(resolution: '1080p' | '720p', aspect?: AspectRatioPreset): [number, number] {
-  const is1080 = resolution === '1080p';
-  switch (aspect) {
-    case '9:16':
-      return is1080 ? [1080, 1920] : [720, 1280];
-    case '3:4':
-      return is1080 ? [1080, 1440] : [810, 1080];
-    case '4:3':
-      return is1080 ? [1440, 1080] : [960, 720];
-    case '1:1':
-      return is1080 ? [1080, 1080] : [720, 720];
-    case '16:9':
-    default:
-      return is1080 ? [1920, 1080] : [1280, 720];
-  }
+function getExportDimensions(settings: ExportSettings): [number, number] {
+  const aspect =
+    typeof settings.aspectValue === 'number' && settings.aspectValue > 0
+      ? settings.aspectValue
+      : resolveAspectValue(settings.aspectRatio ?? '16:9', [], DEFAULT_CUSTOM_ASPECT);
+  return getExportDimensionsFromAspect(settings.resolution, aspect);
 }
 
 export interface ProgressInfo {
@@ -421,7 +413,7 @@ export class RendererEngine {
     const totalDuration = this.getTotalDuration();
     const fps = settings.fps;
     const totalFrames = Math.max(1, Math.round(totalDuration * fps));
-    const [targetW, targetH] = getExportDimensions(settings.resolution, settings.aspectRatio);
+    const [targetW, targetH] = getExportDimensions(settings);
 
     const {
       encodePngSequenceToMp4,
@@ -560,7 +552,7 @@ export class RendererEngine {
     const fps = settings.fps;
     const totalFrames = Math.max(1, Math.round(totalDuration * fps));
 
-    const [targetW, targetH] = getExportDimensions(settings.resolution, settings.aspectRatio);
+    const [targetW, targetH] = getExportDimensions(settings);
 
     // Create offscreen export canvas & renderer
     const exportCanvas = document.createElement('canvas');
@@ -660,7 +652,7 @@ export class RendererEngine {
 
     const totalDuration = this.getTotalDuration();
     const fps = settings.fps;
-    const [targetW, targetH] = getExportDimensions(settings.resolution, settings.aspectRatio);
+    const [targetW, targetH] = getExportDimensions(settings);
 
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = targetW;

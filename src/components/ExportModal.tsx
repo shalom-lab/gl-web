@@ -133,7 +133,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-zinc-700 mb-1.5">
-                画面分辨率 ({aspectRatio})
+                画面分辨率 ({aspectRatio === 'original' ? '原图' : aspectRatio === 'custom' ? '自定义' : aspectRatio})
               </label>
               <select
                 value={resolution}
@@ -164,10 +164,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     <option value="720p">720P (960 × 720)</option>
                   </>
                 )}
-                {aspectRatio === '1:1' && (
+                {(aspectRatio === 'original' || aspectRatio === 'custom') && (
                   <>
-                    <option value="1080p">1080P (1080 × 1080)</option>
-                    <option value="720p">720P (720 × 720)</option>
+                    <option value="1080p">1080P（短边 1080，按当前画幅推算）</option>
+                    <option value="720p">720P（短边 720，按当前画幅推算）</option>
                   </>
                 )}
               </select>

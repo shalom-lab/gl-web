@@ -11,6 +11,11 @@ import type {
   ShaderSettings,
   TimelineSettings
 } from '../types';
+import {
+  clampCustomAspect,
+  DEFAULT_CUSTOM_ASPECT,
+  type CustomAspect
+} from './aspectRatio';
 
 const DB_NAME = 'gl-web';
 const DB_VERSION = 4;
@@ -39,6 +44,8 @@ export interface AppPrefs {
   /** Right sidebar width from the vertical splitter handle (px). */
   sidebarWidth: number;
   aspectRatio?: AspectRatioPreset;
+  /** Integer a:b when aspectRatio === 'custom'. */
+  customAspect?: CustomAspect;
   sidebarTab?: SidebarTab;
   shaderSettings?: ShaderSettings;
   timelineSettings?: TimelineSettings;
@@ -53,12 +60,14 @@ export const DEFAULT_PREVIEW_ZOOM = 1;
 export const PREVIEW_ZOOM_MIN = 0.5;
 export const PREVIEW_ZOOM_MAX = 2;
 export const PREVIEW_ZOOM_STEP = 0.1;
+/** Fine wheel step on the zoom % label (smaller than +/-). */
+export const PREVIEW_ZOOM_FINE_STEP = 0.01;
 
 export function clampPreviewZoom(zoom: number): number {
   if (!Number.isFinite(zoom)) return DEFAULT_PREVIEW_ZOOM;
   const clamped = Math.max(PREVIEW_ZOOM_MIN, Math.min(PREVIEW_ZOOM_MAX, zoom));
-  // Snap to 1 decimal to keep prefs compact and UI stable
-  return Math.round(clamped * 10) / 10;
+  // Snap to 2 decimals so fine wheel (±0.01) persists cleanly
+  return Math.round(clamped * 100) / 100;
 }
 
 export const DEFAULT_EXPORT_PREFS: ExportPrefs = {
@@ -250,15 +259,25 @@ export async function loadAppPrefs(): Promise<AppPrefs | null> {
     db.close();
     if (!record || typeof record.sidebarWidth !== 'number') return null;
 
-    const aspectOk = ['16:9', '9:16', '3:4', '4:3', '1:1'].includes(
+    const aspectOk = ['16:9', '9:16', '3:4', '4:3', 'original', 'custom'].includes(
       record.aspectRatio as string
     );
+    // Migrate removed 1:1 → 16:9
+    const migratedAspect =
+      (record.aspectRatio as string) === '1:1'
+        ? ('16:9' as AspectRatioPreset)
+        : aspectOk
+          ? (record.aspectRatio as AspectRatioPreset)
+          : undefined;
     const tabOk = ['transitions', 'effects', 'slides'].includes(record.sidebarTab as string);
 
     return {
       key: APP_PREFS_KEY,
       sidebarWidth: record.sidebarWidth,
-      aspectRatio: aspectOk ? (record.aspectRatio as AspectRatioPreset) : undefined,
+      aspectRatio: migratedAspect,
+      customAspect: record.customAspect
+        ? clampCustomAspect(record.customAspect)
+        : undefined,
       sidebarTab: tabOk ? (record.sidebarTab as SidebarTab) : undefined,
       shaderSettings: sanitizeShaderSettings(record.shaderSettings),
       timelineSettings: sanitizeTimelineSettings(record.timelineSettings),
@@ -284,6 +303,9 @@ export async function saveAppPrefs(prefs: AppPrefsInput): Promise<void> {
       key: APP_PREFS_KEY,
       sidebarWidth: clampSidebarWidth(prefs.sidebarWidth),
       aspectRatio: prefs.aspectRatio,
+      customAspect: prefs.customAspect
+        ? clampCustomAspect(prefs.customAspect)
+        : undefined,
       sidebarTab: prefs.sidebarTab,
       shaderSettings: prefs.shaderSettings,
       timelineSettings: prefs.timelineSettings,
@@ -428,6 +450,32 @@ export async function deleteShaderPreset(id: string): Promise<void> {
   db.close();
 }
 
+
+function cloneShaderSettings(settings: ShaderSettings): ShaderSettings {
+  return {
+    breathIntensity: settings.breathIntensity,
+    chromaticAberration: settings.chromaticAberration,
+    fluidDistortion: settings.fluidDistortion,
+    filmGrain: settings.filmGrain,
+    vignette: settings.vignette,
+    bloomGlow: settings.bloomGlow,
+    scanReveal: settings.scanReveal,
+    glitch: settings.glitch,
+    edgeBlur: settings.edgeBlur,
+    colorTone: settings.colorTone,
+    transitionId: settings.transitionId,
+    customGlsl: settings.customGlsl != null ? String(settings.customGlsl) : undefined
+  };
+}
+
+function cloneTimelineSettings(settings: TimelineSettings): TimelineSettings {
+  return {
+    slideDuration: settings.slideDuration,
+    transitionDuration: settings.transitionDuration,
+    loop: settings.loop
+  };
+}
+
 /** Create a new preset from current shader + timeline settings. */
 export async function createShaderPreset(
   name: string,
@@ -440,14 +488,14 @@ export async function createShaderPreset(
     name: name.trim() || `预设 ${new Date(now).toLocaleString()}`,
     createdAt: now,
     updatedAt: now,
-    shaderSettings: { ...shaderSettings },
-    timelineSettings: timelineSettings ? { ...timelineSettings } : undefined
+    shaderSettings: cloneShaderSettings(shaderSettings),
+    timelineSettings: timelineSettings ? cloneTimelineSettings(timelineSettings) : undefined
   };
   await putShaderPreset(preset);
   return preset;
 }
 
-/** Duplicate a preset in IDB with a new id and「副本」name. */
+/** Duplicate a preset in IDB with a new id and「副本」name (deep copy — no shared refs). */
 export async function duplicateShaderPreset(source: ShaderPreset): Promise<ShaderPreset> {
   const now = Date.now();
   const base = source.name.replace(/\s*副本$/, '').trim() || '未命名预设';
@@ -456,8 +504,10 @@ export async function duplicateShaderPreset(source: ShaderPreset): Promise<Shade
     name: `${base} 副本`,
     createdAt: now,
     updatedAt: now,
-    shaderSettings: { ...source.shaderSettings },
-    timelineSettings: source.timelineSettings ? { ...source.timelineSettings } : undefined
+    shaderSettings: cloneShaderSettings(source.shaderSettings),
+    timelineSettings: source.timelineSettings
+      ? cloneTimelineSettings(source.timelineSettings)
+      : undefined
   };
   await putShaderPreset(preset);
   return preset;
