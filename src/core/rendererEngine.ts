@@ -28,6 +28,31 @@ export interface ProgressInfo {
   statusText: string;
 }
 
+/** Deep-ish snapshot so live UI edits cannot mutate an in-flight export. */
+export function snapshotExportState(
+  slides: ImageSlide[],
+  shaderSettings: ShaderSettings,
+  timelineSettings: TimelineSettings
+): {
+  slides: ImageSlide[];
+  shaderSettings: ShaderSettings;
+  timelineSettings: TimelineSettings;
+} {
+  return {
+    slides: slides.map((s) => ({
+      id: s.id,
+      title: s.title,
+      dataUrl: s.dataUrl,
+      aspectRatio: s.aspectRatio
+    })),
+    shaderSettings: {
+      ...shaderSettings,
+      customGlsl: shaderSettings.customGlsl
+    },
+    timelineSettings: { ...timelineSettings }
+  };
+}
+
 export class RendererEngine {
   private canvas: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer;
@@ -128,6 +153,51 @@ export class RendererEngine {
     this.updateViewportSize();
     this.applyUniformsAtTime(0);
     this.render();
+  }
+
+  /**
+   * Dedicated offscreen engine for background export.
+   * Uses snapshotted slides/settings so the live preview can keep playing/editing.
+   */
+  public static createOffscreenExporter(
+    slides: ImageSlide[],
+    shaderSettings: ShaderSettings,
+    timelineSettings: TimelineSettings
+  ): RendererEngine {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    // Detached from DOM — WebGL still works
+    return new RendererEngine(canvas, slides, shaderSettings, timelineSettings);
+  }
+
+  /** Wait until every slide texture is in the cache (needed before frame stepping). */
+  public async ensureTexturesLoaded(): Promise<void> {
+    const loader = new THREE.TextureLoader();
+    const pending = this.slides.filter((s) => !this.textureCache.has(s.id));
+    if (!pending.length) return;
+
+    await Promise.all(
+      pending.map(
+        (slide) =>
+          new Promise<void>((resolve, reject) => {
+            loader.load(
+              slide.dataUrl,
+              (tex) => {
+                tex.colorSpace = THREE.SRGBColorSpace;
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                tex.wrapS = THREE.ClampToEdgeWrapping;
+                tex.wrapT = THREE.ClampToEdgeWrapping;
+                this.textureCache.set(slide.id, tex);
+                resolve();
+              },
+              undefined,
+              (err) => reject(err ?? new Error(`纹理加载失败: ${slide.id}`))
+            );
+          })
+      )
+    );
   }
 
   // Preload textures into cache

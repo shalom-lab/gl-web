@@ -26,11 +26,12 @@ import {
   type SidebarTab
 } from './utils/imageStore';
 import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
-import { RendererEngine, ProgressInfo } from './core/rendererEngine';
+import { RendererEngine, ProgressInfo, snapshotExportState } from './core/rendererEngine';
 import { Header } from './components/Header';
 import { TimelineControl } from './components/TimelineControl';
 import { RightSidebar } from './components/RightSidebar';
 import { ExportModal } from './components/ExportModal';
+import { ExportJobChip, type ExportJobState } from './components/ExportJobChip';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from './shaders/glTransitions';
 
 export default function App() {
@@ -82,13 +83,13 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
-  // Export State
+  // Export State — modal is config-only; job runs in background with snapshotted data
   const [exportModalOpen, setExportModalOpen] = useState<boolean>(false);
-  const [isExporting, setIsExporting] = useState<boolean>(false);
-  const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
-  const [resultBlob, setResultBlob] = useState<Blob | null>(null);
-  const [resultType, setResultType] = useState<ExportFormat | null>(null);
   const [exportPrefs, setExportPrefs] = useState<ExportPrefs>(DEFAULT_EXPORT_PREFS);
+  const [exportJob, setExportJob] = useState<ExportJobState | null>(null);
+  const exportEngineRef = useRef<RendererEngine | null>(null);
+  const exportToastTimerRef = useRef<number | null>(null);
+  const [exportToast, setExportToast] = useState<string | null>(null);
 
   // Restore gallery + full UI prefs from IndexedDB (one durable copy) before engine init
   useEffect(() => {
@@ -456,72 +457,175 @@ export default function App() {
     }
   };
 
-  // Export Trigger
-  const handleStartExport = async (settings: ExportSettings) => {
-    if (!engineRef.current) return;
-    setExportPrefs({
-      format: settings.format,
-      resolution: settings.resolution,
-      fps: settings.fps
-    });
-    setIsExporting(true);
-    setProgressInfo({
-      currentFrame: 0,
-      totalFrames: 100,
-      percent: 0,
-      statusText: '正在初始化导出渲染器...'
-    });
-    setResultBlob(null);
-    setResultType(null);
-
-    try {
-      let blob: Blob | null = null;
-      if (settings.format === 'mp4-wasm') {
-        blob = await engineRef.current.exportMp4ViaFfmpeg(settings, (info) => {
-          setProgressInfo(info);
-        });
-        setResultType('mp4-wasm');
-      } else if (settings.format === 'png-zip') {
-        blob = await engineRef.current.exportPngSequence(settings, (info) => {
-          setProgressInfo(info);
-        });
-        setResultType('png-zip');
-      } else {
-        blob = await engineRef.current.exportWebmVideo(settings, (info) => {
-          setProgressInfo(info);
-        });
-        setResultType('webm-video');
-      }
-
-      if (blob) {
-        setResultBlob(blob);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download =
-          settings.format === 'mp4-wasm'
-            ? 'artlens_video.mp4'
-            : settings.format === 'png-zip'
-              ? 'artlens_frames.zip'
-              : 'artlens_video.webm';
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-      }
-    } catch (err: any) {
-      console.error('Export error:', err);
-      alert('导出过程中发生错误: ' + (err.message || '未知错误'));
-    } finally {
-      setIsExporting(false);
+  const showExportToast = useCallback((message: string) => {
+    setExportToast(message);
+    if (exportToastTimerRef.current != null) {
+      window.clearTimeout(exportToastTimerRef.current);
     }
-  };
+    exportToastTimerRef.current = window.setTimeout(() => setExportToast(null), 3200);
+  }, []);
 
-  const handleCancelExport = () => {
-    engineRef.current?.cancelExport();
+  const downloadExportBlob = useCallback((blob: Blob, format: ExportSettings['format']) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download =
+      format === 'mp4-wasm'
+        ? 'artlens_video.mp4'
+        : format === 'png-zip'
+          ? 'artlens_frames.zip'
+          : 'artlens_video.webm';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }, []);
+
+  // Background export: snapshot slides/settings, offscreen engine, non-blocking UI
+  const handleStartExport = useCallback(
+    async (settings: ExportSettings) => {
+      if (exportJob?.status === 'running') {
+        showExportToast('已有导出任务在进行中');
+        return;
+      }
+
+      setExportPrefs({
+        format: settings.format,
+        resolution: settings.resolution,
+        fps: settings.fps
+      });
+      setExportModalOpen(false);
+
+      const snap = snapshotExportState(slides, shaderSettings, timelineSettings);
+      const settingsWithAspect: ExportSettings = {
+        ...settings,
+        aspectRatio: settings.aspectRatio ?? aspectRatio
+      };
+
+      const exporter = RendererEngine.createOffscreenExporter(
+        snap.slides,
+        snap.shaderSettings,
+        snap.timelineSettings
+      );
+      exportEngineRef.current = exporter;
+
+      setExportJob({
+        status: 'running',
+        progress: {
+          currentFrame: 0,
+          totalFrames: 100,
+          percent: 0,
+          statusText: '正在准备导出快照与渲染器…'
+        },
+        resultBlob: null,
+        resultType: null,
+        minimized: false
+      });
+
+      const onProgress = (info: ProgressInfo) => {
+        setExportJob((prev) =>
+          prev && prev.status === 'running' ? { ...prev, progress: info } : prev
+        );
+      };
+
+      try {
+        await exporter.ensureTexturesLoaded();
+        let blob: Blob | null = null;
+        if (settingsWithAspect.format === 'mp4-wasm') {
+          blob = await exporter.exportMp4ViaFfmpeg(settingsWithAspect, onProgress);
+        } else if (settingsWithAspect.format === 'png-zip') {
+          blob = await exporter.exportPngSequence(settingsWithAspect, onProgress);
+        } else {
+          blob = await exporter.exportWebmVideo(settingsWithAspect, onProgress);
+        }
+
+        if (blob) {
+          setExportJob({
+            status: 'done',
+            progress: {
+              currentFrame: 0,
+              totalFrames: 0,
+              percent: 100,
+              statusText: '导出完成'
+            },
+            resultBlob: blob,
+            resultType: settingsWithAspect.format,
+            minimized: false
+          });
+          downloadExportBlob(blob, settingsWithAspect.format);
+          showExportToast('导出成功，文件已开始下载');
+        } else {
+          setExportJob({
+            status: 'cancelled',
+            progress: null,
+            resultBlob: null,
+            resultType: null,
+            minimized: false
+          });
+          showExportToast('已取消导出');
+        }
+      } catch (err: any) {
+        console.error('Export error:', err);
+        const msg = err?.message || '未知错误';
+        if (msg === '用户取消了导出') {
+          setExportJob({
+            status: 'cancelled',
+            progress: null,
+            resultBlob: null,
+            resultType: null,
+            minimized: false
+          });
+          showExportToast('已取消导出');
+        } else {
+          setExportJob({
+            status: 'error',
+            progress: null,
+            resultBlob: null,
+            resultType: null,
+            errorMessage: msg,
+            minimized: false
+          });
+          showExportToast('导出失败: ' + msg);
+        }
+      } finally {
+        try {
+          exporter.dispose();
+        } catch {
+          /* ignore */
+        }
+        if (exportEngineRef.current === exporter) {
+          exportEngineRef.current = null;
+        }
+      }
+    },
+    [
+      exportJob?.status,
+      slides,
+      shaderSettings,
+      timelineSettings,
+      aspectRatio,
+      downloadExportBlob,
+      showExportToast
+    ]
+  );
+
+  const handleCancelExport = useCallback(() => {
+    exportEngineRef.current?.cancelExport();
     void import('./utils/ffmpegMp4')
       .then((m) => m.terminateFfmpeg())
       .catch(() => {});
-    setIsExporting(false);
-  };
+  }, []);
+
+  const handleDismissExportJob = useCallback(() => {
+    setExportJob(null);
+  }, []);
+
+  const handleToggleExportMinimize = useCallback(() => {
+    setExportJob((prev) => (prev ? { ...prev, minimized: !prev.minimized } : prev));
+  }, []);
+
+  const handleDownloadExportJob = useCallback(() => {
+    if (!exportJob?.resultBlob || !exportJob.resultType) return;
+    downloadExportBlob(exportJob.resultBlob, exportJob.resultType);
+  }, [exportJob, downloadExportBlob]);
 
   const handleExportPrefsChange = useCallback((prefs: ExportPrefs) => {
     setExportPrefs(prefs);
@@ -739,21 +843,34 @@ export default function App() {
         />
       </div>
 
-      {/* Export modal dialog */}
+      {/* Export config modal (non-blocking once started) */}
       <ExportModal
         isOpen={exportModalOpen}
-        isExporting={isExporting}
-        progressInfo={progressInfo}
+        isBusy={exportJob?.status === 'running'}
         totalDuration={totalDuration}
         aspectRatio={aspectRatio}
         initialPrefs={exportPrefs}
         onClose={() => setExportModalOpen(false)}
-        onStartExport={handleStartExport}
-        onCancelExport={handleCancelExport}
+        onStartExport={(s) => void handleStartExport(s)}
         onPrefsChange={handleExportPrefsChange}
-        resultBlob={resultBlob}
-        resultType={resultType}
       />
+
+      {/* Corner progress / result chip */}
+      {exportJob && (
+        <ExportJobChip
+          job={exportJob}
+          onCancel={handleCancelExport}
+          onToggleMinimize={handleToggleExportMinimize}
+          onDismiss={handleDismissExportJob}
+          onDownload={handleDownloadExportJob}
+        />
+      )}
+
+      {exportToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] px-4 py-2 rounded-full bg-zinc-900 text-white text-xs font-medium shadow-lg pointer-events-none">
+          {exportToast}
+        </div>
+      )}
     </div>
   );
 }
