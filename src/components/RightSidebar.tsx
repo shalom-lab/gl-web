@@ -185,180 +185,56 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               <span className="text-[11px] text-zinc-400">实时渲染生效</span>
             </div>
 
-            {/* Slider items */}
+            {/* Slider items — click label text to reset that effect to 0 */}
             <div className="space-y-3">
-              {/* Ken Burns */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">镜头微动呼吸 (Ken Burns)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.breathIntensity * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.breathIntensity}
-                  onChange={(e) => updateShader('breathIntensity', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Film Grain */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">颗粒胶片质感 (Film Grain)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.filmGrain * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.filmGrain}
-                  onChange={(e) => updateShader('filmGrain', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Chromatic Aberration */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">色差偏移 (RGB 分离)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.chromaticAberration * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.chromaticAberration}
-                  onChange={(e) =>
-                    updateShader('chromaticAberration', parseFloat(e.target.value))
-                  }
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Fluid Distortion */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">流体轻波扭曲 (Fluid Wave)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.fluidDistortion * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.fluidDistortion}
-                  onChange={(e) => updateShader('fluidDistortion', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Vignette */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">电影暗角 (Vignette)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.vignette * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.vignette}
-                  onChange={(e) => updateShader('vignette', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Bloom Glow */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">镜头光晕 / 辉光 (Bloom)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.bloomGlow * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.bloomGlow}
-                  onChange={(e) => updateShader('bloomGlow', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Scan Reveal */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">进场扫描光显 (Scan Reveal)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.scanReveal * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.scanReveal}
-                  onChange={(e) => updateShader('scanReveal', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Edge Blur */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">景深边缘虚化 (Edge Blur)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.edgeBlur * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.edgeBlur}
-                  onChange={(e) => updateShader('edgeBlur', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
-
-              {/* Glitch */}
-              <div>
-                <div className="flex justify-between text-zinc-600 mb-1">
-                  <span className="font-medium text-zinc-700">细微故障风 (Glitch)</span>
-                  <span className="font-mono text-zinc-400">
-                    {Math.round(shaderSettings.glitch * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={shaderSettings.glitch}
-                  onChange={(e) => updateShader('glitch', parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
-                />
-              </div>
+              {(
+                [
+                  { key: 'breathIntensity', label: '镜头微动呼吸 (Ken Burns)' },
+                  { key: 'filmGrain', label: '颗粒胶片质感 (Film Grain)' },
+                  { key: 'chromaticAberration', label: '色差偏移 (RGB 分离)' },
+                  { key: 'fluidDistortion', label: '流体轻波扭曲 (Fluid Wave)' },
+                  { key: 'vignette', label: '电影暗角 (Vignette)' },
+                  { key: 'bloomGlow', label: '镜头光晕 / 辉光 (Bloom)' },
+                  { key: 'scanReveal', label: '进场扫描光显 (Scan Reveal)' },
+                  { key: 'edgeBlur', label: '景深边缘虚化 (Edge Blur)' },
+                  { key: 'glitch', label: '细微故障风 (Glitch)' }
+                ] as const
+              ).map((item) => {
+                const value = shaderSettings[item.key];
+                return (
+                  <div key={item.key}>
+                    <div className="flex justify-between text-zinc-600 mb-1">
+                      <span
+                        className="font-medium text-zinc-700 cursor-pointer select-none hover:text-zinc-900"
+                        title="点击归零"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => updateShader(item.key, 0)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            updateShader(item.key, 0);
+                          }
+                        }}
+                      >
+                        {item.label}
+                      </span>
+                      <span className="font-mono text-zinc-400">
+                        {Math.round(value * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={value}
+                      onChange={(e) => updateShader(item.key, parseFloat(e.target.value))}
+                      className="w-full h-1.5 bg-zinc-200 rounded-lg accent-zinc-900 cursor-pointer"
+                    />
+                  </div>
+                );
+              })}
             </div>
 
             {/* Color Tone */}
