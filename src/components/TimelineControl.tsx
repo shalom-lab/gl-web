@@ -153,7 +153,7 @@ export const TimelineControl: React.FC<TimelineControlProps> = ({
         </div>
       </div>
 
-      {/* Mini Thumbnails Tape (10 slides quick jump) */}
+      {/* Mini Thumbnails Tape (quick jump) */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
         {slides.map((slide, i) => {
           const isActive = i === currentSlideIndex;

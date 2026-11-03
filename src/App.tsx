@@ -217,9 +217,9 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // Batch upload up to 10+ images — persist one durable copy in IndexedDB
+  // Batch upload any number of images — persist one durable copy in IndexedDB
   const handleBatchUpload = (files: FileList) => {
-    const fileArray = Array.from(files).slice(0, 10);
+    const fileArray = Array.from(files);
     const promises = fileArray.map((file, i) => {
       return new Promise<ImageSlide>((resolve) => {
         const reader = new FileReader();

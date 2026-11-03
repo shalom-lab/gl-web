@@ -389,7 +389,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
           </div>
         )}
 
-        {/* --- TAB 2: 图片序列 (10张列表) --- */}
+        {/* --- TAB 2: 图片序列 --- */}
         {activeTab === 'slides' && (
           <div className="space-y-3 text-xs">
             {/* Header actions */}
@@ -415,7 +415,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             </div>
 
-            {/* List of 10 slides */}
+            {/* List of slides */}
             <div className="space-y-2">
               {slides.map((slide, index) => {
                 const isActive = index === currentSlideIndex;
