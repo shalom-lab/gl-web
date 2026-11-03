@@ -12,7 +12,9 @@ export function getTransitionGlsl(transitionId: string, customGlsl?: string): st
   if (transitionId === 'custom' && customGlsl && customGlsl.trim().length > 0) {
     return customGlsl;
   }
-  const found = GL_TRANSITIONS_CATALOG.find((t) => t.id === transitionId);
+  // Legacy id from earlier approximate catalog
+  const resolvedId = transitionId === 'verticalopenclose' ? 'verticalopen' : transitionId;
+  const found = GL_TRANSITIONS_CATALOG.find((t) => t.id === resolvedId);
   return found ? found.glsl : GL_TRANSITIONS_CATALOG[0].glsl;
 }
 
