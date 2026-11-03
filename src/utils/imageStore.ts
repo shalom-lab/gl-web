@@ -43,9 +43,23 @@ export interface AppPrefs {
   shaderSettings?: ShaderSettings;
   timelineSettings?: TimelineSettings;
   exportPrefs?: ExportPrefs;
+  /** Preview stage CSS zoom (1 = 100%). */
+  previewZoom?: number;
 }
 
 export const DEFAULT_SIDEBAR_WIDTH = 440;
+
+export const DEFAULT_PREVIEW_ZOOM = 1;
+export const PREVIEW_ZOOM_MIN = 0.5;
+export const PREVIEW_ZOOM_MAX = 2;
+export const PREVIEW_ZOOM_STEP = 0.1;
+
+export function clampPreviewZoom(zoom: number): number {
+  if (!Number.isFinite(zoom)) return DEFAULT_PREVIEW_ZOOM;
+  const clamped = Math.max(PREVIEW_ZOOM_MIN, Math.min(PREVIEW_ZOOM_MAX, zoom));
+  // Snap to 1 decimal to keep prefs compact and UI stable
+  return Math.round(clamped * 10) / 10;
+}
 
 export const DEFAULT_EXPORT_PREFS: ExportPrefs = {
   format: 'mp4-wasm',
@@ -248,7 +262,11 @@ export async function loadAppPrefs(): Promise<AppPrefs | null> {
       sidebarTab: tabOk ? (record.sidebarTab as SidebarTab) : undefined,
       shaderSettings: sanitizeShaderSettings(record.shaderSettings),
       timelineSettings: sanitizeTimelineSettings(record.timelineSettings),
-      exportPrefs: sanitizeExportPrefs(record.exportPrefs)
+      exportPrefs: sanitizeExportPrefs(record.exportPrefs),
+      previewZoom:
+        typeof record.previewZoom === 'number'
+          ? clampPreviewZoom(record.previewZoom)
+          : undefined
     };
   } catch (err) {
     console.warn('[imageStore] 无法从 IndexedDB 恢复偏好:', err);
@@ -269,7 +287,9 @@ export async function saveAppPrefs(prefs: AppPrefsInput): Promise<void> {
       sidebarTab: prefs.sidebarTab,
       shaderSettings: prefs.shaderSettings,
       timelineSettings: prefs.timelineSettings,
-      exportPrefs: prefs.exportPrefs ? sanitizeExportPrefs(prefs.exportPrefs) : undefined
+      exportPrefs: prefs.exportPrefs ? sanitizeExportPrefs(prefs.exportPrefs) : undefined,
+      previewZoom:
+        prefs.previewZoom != null ? clampPreviewZoom(prefs.previewZoom) : undefined
     };
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(PREFS_STORE, 'readwrite');

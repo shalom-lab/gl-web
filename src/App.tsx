@@ -11,15 +11,21 @@ import {
 import { getDefaultImageSlides } from './utils/proceduralImages';
 import {
   clearUploadedSlides,
+  clampPreviewZoom,
   clampSidebarWidth,
   DEFAULT_EXPORT_PREFS,
+  DEFAULT_PREVIEW_ZOOM,
   DEFAULT_SIDEBAR_WIDTH,
   loadAppPrefs,
   loadUploadedSlides,
+  PREVIEW_ZOOM_MAX,
+  PREVIEW_ZOOM_MIN,
+  PREVIEW_ZOOM_STEP,
   saveAppPrefs,
   saveUploadedSlides,
   type SidebarTab
 } from './utils/imageStore';
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { RendererEngine, ProgressInfo } from './core/rendererEngine';
 import { Header } from './components/Header';
 import { TimelineControl } from './components/TimelineControl';
@@ -46,6 +52,9 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState<number>(DEFAULT_SIDEBAR_WIDTH);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [prefsReady, setPrefsReady] = useState(false);
+  /** Preview stage visual zoom (CSS scale); persisted in IDB prefs. */
+  const [previewZoom, setPreviewZoom] = useState<number>(DEFAULT_PREVIEW_ZOOM);
+  const previewPaneRef = useRef<HTMLDivElement | null>(null);
 
   // Shader effect settings (Default tuned for subtle, cinematic, filmic feel)
   const [shaderSettings, setShaderSettings] = useState<ShaderSettings>({
@@ -95,6 +104,7 @@ export default function App() {
       if (prefs?.shaderSettings) setShaderSettings(prefs.shaderSettings);
       if (prefs?.timelineSettings) setTimelineSettings(prefs.timelineSettings);
       if (prefs?.exportPrefs) setExportPrefs(prefs.exportPrefs);
+      if (prefs?.previewZoom != null) setPreviewZoom(clampPreviewZoom(prefs.previewZoom));
       setSlides(stored && stored.length > 0 ? stored : getDefaultImageSlides());
       setSlidesReady(true);
       setPrefsReady(true);
@@ -114,7 +124,8 @@ export default function App() {
         sidebarTab,
         shaderSettings,
         timelineSettings,
-        exportPrefs
+        exportPrefs,
+        previewZoom
       });
     }, 300);
     return () => window.clearTimeout(timer);
@@ -125,6 +136,7 @@ export default function App() {
     shaderSettings,
     timelineSettings,
     exportPrefs,
+    previewZoom,
     prefsReady
   ]);
 
@@ -515,6 +527,32 @@ export default function App() {
     setExportPrefs(prefs);
   }, []);
 
+  const zoomIn = useCallback(() => {
+    setPreviewZoom((z) => clampPreviewZoom(z + PREVIEW_ZOOM_STEP));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setPreviewZoom((z) => clampPreviewZoom(z - PREVIEW_ZOOM_STEP));
+  }, []);
+
+  const zoomReset = useCallback(() => {
+    setPreviewZoom(DEFAULT_PREVIEW_ZOOM);
+  }, []);
+
+  // Ctrl/Meta + wheel over the preview pane adjusts zoom
+  useEffect(() => {
+    const pane = previewPaneRef.current;
+    if (!pane) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -PREVIEW_ZOOM_STEP : PREVIEW_ZOOM_STEP;
+      setPreviewZoom((z) => clampPreviewZoom(z + delta));
+    };
+    pane.addEventListener('wheel', onWheel, { passive: false });
+    return () => pane.removeEventListener('wheel', onWheel);
+  }, [slidesReady]);
+
   const totalDuration = engineRef.current?.getTotalDuration() || 52;
 
   // Aspect ratio css classes for the left viewport
@@ -562,11 +600,57 @@ export default function App() {
       <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
         {/* === LEFT: PREVIEW & TIMELINE STAGE === */}
         <section className="flex-1 min-w-0 flex flex-col h-full bg-zinc-200/50">
-          {/* 100% pure WebGL canvas rendering without DOM overlay in 3D */}
-          <div className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 relative">
+          {/* Preview pane: stage + top-right zoom controls (outside the canvas) */}
+          <div
+            ref={previewPaneRef}
+            className="flex-1 min-h-0 flex items-center justify-center p-3 sm:p-5 relative overflow-auto"
+          >
+            {/* Zoom controls — top-right of preview pane (outside stage) */}
+            <div className="absolute top-3 right-3 z-20 flex items-center gap-0.5 rounded-lg border border-zinc-300/80 bg-white/95 backdrop-blur-xs shadow-sm p-0.5">
+              <button
+                type="button"
+                onClick={zoomOut}
+                disabled={previewZoom <= PREVIEW_ZOOM_MIN}
+                title="缩小 (Ctrl + 滚轮)"
+                className="p-1.5 rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={zoomReset}
+                title="重置为 100%"
+                className="min-w-[3.25rem] px-1.5 py-1 rounded-md text-[11px] font-mono font-semibold tabular-nums text-zinc-800 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                {Math.round(previewZoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={previewZoom >= PREVIEW_ZOOM_MAX}
+                title="放大 (Ctrl + 滚轮)"
+                className="p-1.5 rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <div className="w-px h-4 bg-zinc-200 mx-0.5" />
+              <button
+                type="button"
+                onClick={zoomReset}
+                title="适应 / 重置缩放"
+                className="p-1.5 rounded-md text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
             <div
               ref={containerRef}
-              className={`relative w-full ${aspectClass} rounded-xl overflow-hidden bg-zinc-950 shadow-md border border-zinc-300/80 flex items-center justify-center transition-all`}
+              style={{
+                transform: `scale(${previewZoom})`,
+                transformOrigin: 'center center'
+              }}
+              className={`relative w-full ${aspectClass} rounded-xl overflow-hidden bg-zinc-950 shadow-md border border-zinc-300/80 flex items-center justify-center transition-transform duration-150`}
             >
               {/* Three.js WebGL Canvas */}
               <canvas
