@@ -16,7 +16,8 @@ import {
   Code2,
   ExternalLink,
   Search,
-  Sliders
+  Sliders,
+  X
 } from 'lucide-react';
 import { GL_TRANSITIONS_CATALOG, DEFAULT_CUSTOM_GLSL } from '../shaders/glTransitions';
 
@@ -78,6 +79,35 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
       ...timelineSettings,
       [key]: value
     });
+  };
+
+  type TransitionCategory = 'all' | 'cinematic' | 'motion' | 'fluid' | 'art' | 'custom';
+
+  /** Leave the custom GLSL editor and return to the catalog (default: 全部). */
+  const closeCustomGlslEditor = (nextCategory: TransitionCategory = 'all') => {
+    setTransitionCategory(nextCategory);
+    // If the active transition was the custom editor, fall back to a catalog preset
+    // so the user isn't stuck on an invisible custom shader with no close path.
+    if (shaderSettings.transitionId === 'custom') {
+      onUpdateShader({
+        ...shaderSettings,
+        transitionId: 'crossfade'
+      });
+    }
+  };
+
+  const handleTransitionCategoryClick = (cat: TransitionCategory) => {
+    if (cat === 'custom') {
+      setTransitionCategory('custom');
+      onUpdateShader({
+        ...shaderSettings,
+        transitionId: 'custom',
+        customGlsl: shaderSettings.customGlsl || DEFAULT_CUSTOM_GLSL
+      });
+      return;
+    }
+    // Switching to any other chip leaves the editor and shows that catalog
+    closeCustomGlslEditor(cat);
   };
 
   const handleSingleReplaceClick = (e: React.MouseEvent, index: number) => {
@@ -443,16 +473,16 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
 
               <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
                 {[
-                  { id: 'all', label: '全部' },
-                  { id: 'cinematic', label: '电影质感' },
-                  { id: 'motion', label: '动感推镜' },
-                  { id: 'fluid', label: '流体水波' },
-                  { id: 'art', label: '艺术噪波' },
-                  { id: 'custom', label: '自定义 GLSL' }
+                  { id: 'all' as const, label: '全部' },
+                  { id: 'cinematic' as const, label: '电影质感' },
+                  { id: 'motion' as const, label: '动感推镜' },
+                  { id: 'fluid' as const, label: '流体水波' },
+                  { id: 'art' as const, label: '艺术噪波' },
+                  { id: 'custom' as const, label: '自定义 GLSL' }
                 ].map((cat) => (
                   <button
                     key={cat.id}
-                    onClick={() => setTransitionCategory(cat.id as any)}
+                    onClick={() => handleTransitionCategoryClick(cat.id)}
                     className={`px-2.5 py-1 rounded-md text-[11px] font-medium shrink-0 transition-colors cursor-pointer ${
                       transitionCategory === cat.id
                         ? 'bg-zinc-900 text-white'
@@ -465,23 +495,34 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             </div>
 
-            {/* Custom GLSL Editor Mode */}
-            {transitionCategory === 'custom' || shaderSettings.transitionId === 'custom' ? (
+            {/* Custom GLSL Editor Mode — only while the「自定义 GLSL」category is selected */}
+            {transitionCategory === 'custom' ? (
               <div className="p-3 bg-zinc-900 text-zinc-100 rounded-lg space-y-2.5">
-                <div className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-1.5 text-amber-400 font-mono font-medium">
-                    <Code2 className="w-4 h-4" />
-                    <span>自定义 gl-transitions GLSL</span>
+                <div className="flex items-center justify-between text-xs gap-2">
+                  <div className="flex items-center gap-1.5 text-amber-400 font-mono font-medium min-w-0">
+                    <Code2 className="w-4 h-4 shrink-0" />
+                    <span className="truncate">自定义 gl-transitions GLSL</span>
                   </div>
-                  <button
-                    onClick={() => {
-                      updateShader('customGlsl', DEFAULT_CUSTOM_GLSL);
-                      updateShader('transitionId', 'custom');
-                    }}
-                    className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-mono transition-colors"
-                  >
-                    重置模板
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => {
+                        updateShader('customGlsl', DEFAULT_CUSTOM_GLSL);
+                        updateShader('transitionId', 'custom');
+                      }}
+                      className="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] font-mono transition-colors cursor-pointer"
+                      title="恢复默认模板代码"
+                    >
+                      重置模板
+                    </button>
+                    <button
+                      onClick={() => closeCustomGlslEditor('all')}
+                      title="关闭编辑器，返回转场列表"
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-medium transition-colors cursor-pointer border border-zinc-700"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>关闭</span>
+                    </button>
+                  </div>
                 </div>
 
                 <p className="text-[11px] text-zinc-400 leading-relaxed font-sans">
@@ -490,16 +531,18 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   <code className="text-amber-300 font-mono"> getToColor(uv)</code>,
                   <code className="text-amber-300 font-mono"> progress</code>,
                   <code className="text-amber-300 font-mono"> ratio</code>。
+                  点「关闭」或上方分类标签即可返回转场列表。
                 </p>
 
                 <textarea
                   rows={9}
                   value={shaderSettings.customGlsl ?? DEFAULT_CUSTOM_GLSL}
                   onChange={(e) => {
-                    updateShader('customGlsl', e.target.value);
-                    if (shaderSettings.transitionId !== 'custom') {
-                      updateShader('transitionId', 'custom');
-                    }
+                    onUpdateShader({
+                      ...shaderSettings,
+                      customGlsl: e.target.value,
+                      transitionId: 'custom'
+                    });
                   }}
                   className="w-full bg-zinc-950 text-emerald-400 font-mono text-[11px] leading-relaxed p-2.5 rounded border border-zinc-800 focus:outline-hidden focus:border-amber-500 resize-y"
                   spellCheck={false}
@@ -515,6 +558,9 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
                   <div
                     key={t.id}
                     onClick={() => {
+                      if (transitionCategory === 'custom') {
+                        setTransitionCategory('all');
+                      }
                       updateShader('transitionId', t.id);
                       onPreviewTransition?.();
                     }}
