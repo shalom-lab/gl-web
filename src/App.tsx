@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import {
   AspectRatioPreset,
+  ExportFormat,
+  ExportPrefs,
   ExportSettings,
   ImageSlide,
   ShaderSettings,
@@ -10,11 +12,13 @@ import { getDefaultImageSlides } from './utils/proceduralImages';
 import {
   clearUploadedSlides,
   clampSidebarWidth,
+  DEFAULT_EXPORT_PREFS,
   DEFAULT_SIDEBAR_WIDTH,
   loadAppPrefs,
   loadUploadedSlides,
   saveAppPrefs,
-  saveUploadedSlides
+  saveUploadedSlides,
+  type SidebarTab
 } from './utils/imageStore';
 import { RendererEngine, ProgressInfo } from './core/rendererEngine';
 import { Header } from './components/Header';
@@ -36,7 +40,7 @@ export default function App() {
   const [aspectRatio, setAspectRatio] = useState<AspectRatioPreset>('16:9');
 
   // Active right sidebar tab: 'transitions' | 'effects' | 'slides'
-  const [sidebarTab, setSidebarTab] = useState<'transitions' | 'effects' | 'slides'>('transitions');
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('transitions');
 
   // Resizable sidebar width (px) — hydrated from IndexedDB prefs
   const [sidebarWidth, setSidebarWidth] = useState<number>(DEFAULT_SIDEBAR_WIDTH);
@@ -74,9 +78,10 @@ export default function App() {
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [progressInfo, setProgressInfo] = useState<ProgressInfo | null>(null);
   const [resultBlob, setResultBlob] = useState<Blob | null>(null);
-  const [resultType, setResultType] = useState<'png-zip' | 'webm-video' | null>(null);
+  const [resultType, setResultType] = useState<ExportFormat | null>(null);
+  const [exportPrefs, setExportPrefs] = useState<ExportPrefs>(DEFAULT_EXPORT_PREFS);
 
-  // Restore gallery + layout prefs from IndexedDB (one durable copy each) before engine init
+  // Restore gallery + full UI prefs from IndexedDB (one durable copy) before engine init
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -85,6 +90,11 @@ export default function App() {
       if (prefs?.sidebarWidth != null) {
         setSidebarWidth(clampSidebarWidth(prefs.sidebarWidth));
       }
+      if (prefs?.aspectRatio) setAspectRatio(prefs.aspectRatio);
+      if (prefs?.sidebarTab) setSidebarTab(prefs.sidebarTab);
+      if (prefs?.shaderSettings) setShaderSettings(prefs.shaderSettings);
+      if (prefs?.timelineSettings) setTimelineSettings(prefs.timelineSettings);
+      if (prefs?.exportPrefs) setExportPrefs(prefs.exportPrefs);
       setSlides(stored && stored.length > 0 ? stored : getDefaultImageSlides());
       setSlidesReady(true);
       setPrefsReady(true);
@@ -94,11 +104,29 @@ export default function App() {
     };
   }, []);
 
-  // Persist sidebar layout proportion whenever it changes (after hydrate)
+  // Persist non-secret UI prefs (debounced) — one durable copy under prefs key `app`
   useEffect(() => {
     if (!prefsReady) return;
-    void saveAppPrefs({ sidebarWidth });
-  }, [sidebarWidth, prefsReady]);
+    const timer = window.setTimeout(() => {
+      void saveAppPrefs({
+        sidebarWidth,
+        aspectRatio,
+        sidebarTab,
+        shaderSettings,
+        timelineSettings,
+        exportPrefs
+      });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [
+    sidebarWidth,
+    aspectRatio,
+    sidebarTab,
+    shaderSettings,
+    timelineSettings,
+    exportPrefs,
+    prefsReady
+  ]);
 
   // Initialize Three.js WebGL Engine after slides are ready
   useEffect(() => {
@@ -419,6 +447,11 @@ export default function App() {
   // Export Trigger
   const handleStartExport = async (settings: ExportSettings) => {
     if (!engineRef.current) return;
+    setExportPrefs({
+      format: settings.format,
+      resolution: settings.resolution,
+      fps: settings.fps
+    });
     setIsExporting(true);
     setProgressInfo({
       currentFrame: 0,
@@ -431,7 +464,12 @@ export default function App() {
 
     try {
       let blob: Blob | null = null;
-      if (settings.format === 'png-zip') {
+      if (settings.format === 'mp4-wasm') {
+        blob = await engineRef.current.exportMp4ViaFfmpeg(settings, (info) => {
+          setProgressInfo(info);
+        });
+        setResultType('mp4-wasm');
+      } else if (settings.format === 'png-zip') {
         blob = await engineRef.current.exportPngSequence(settings, (info) => {
           setProgressInfo(info);
         });
@@ -445,12 +483,15 @@ export default function App() {
 
       if (blob) {
         setResultBlob(blob);
-        // Automatically trigger browser download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download =
-          settings.format === 'png-zip' ? 'artlens_frames.zip' : 'artlens_video.webm';
+          settings.format === 'mp4-wasm'
+            ? 'artlens_video.mp4'
+            : settings.format === 'png-zip'
+              ? 'artlens_frames.zip'
+              : 'artlens_video.webm';
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
@@ -464,8 +505,15 @@ export default function App() {
 
   const handleCancelExport = () => {
     engineRef.current?.cancelExport();
+    void import('./utils/ffmpegMp4')
+      .then((m) => m.terminateFfmpeg())
+      .catch(() => {});
     setIsExporting(false);
   };
+
+  const handleExportPrefsChange = useCallback((prefs: ExportPrefs) => {
+    setExportPrefs(prefs);
+  }, []);
 
   const totalDuration = engineRef.current?.getTotalDuration() || 52;
 
@@ -614,9 +662,11 @@ export default function App() {
         progressInfo={progressInfo}
         totalDuration={totalDuration}
         aspectRatio={aspectRatio}
+        initialPrefs={exportPrefs}
         onClose={() => setExportModalOpen(false)}
         onStartExport={handleStartExport}
         onCancelExport={handleCancelExport}
+        onPrefsChange={handleExportPrefsChange}
         resultBlob={resultBlob}
         resultType={resultType}
       />

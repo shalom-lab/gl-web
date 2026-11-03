@@ -32,9 +32,18 @@ export interface TimelineSettings {
 
 export type AspectRatioPreset = '16:9' | '9:16' | '3:4' | '4:3' | '1:1';
 
+export type ExportFormat = 'mp4-wasm' | 'png-zip' | 'webm-video';
+
 export interface ExportSettings {
-  format: 'png-zip' | 'webm-video';
+  format: ExportFormat;
   resolution: '1080p' | '720p';
   fps: 30 | 60;
   aspectRatio?: AspectRatioPreset;
+}
+
+/** Persisted export UI prefs (non-secret). */
+export interface ExportPrefs {
+  format: ExportFormat;
+  resolution: '1080p' | '720p';
+  fps: 30 | 60;
 }

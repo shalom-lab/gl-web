@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Copied from node_modules at build/dev time (~31MB wasm)
+public/ffmpeg/

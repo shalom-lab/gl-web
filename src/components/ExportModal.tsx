@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { AspectRatioPreset, ExportSettings } from '../types';
+import React, { useEffect, useState } from 'react';
+import { AspectRatioPreset, ExportFormat, ExportPrefs, ExportSettings } from '../types';
 import { ProgressInfo } from '../core/rendererEngine';
-import { X, CheckCircle, Copy, Check, Download, Video, Layers, AlertCircle } from 'lucide-react';
+import { X, CheckCircle, Copy, Check, Download, Video, Layers, Film } from 'lucide-react';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -9,11 +9,13 @@ interface ExportModalProps {
   progressInfo: ProgressInfo | null;
   totalDuration: number;
   aspectRatio: AspectRatioPreset;
+  initialPrefs: ExportPrefs;
   onClose: () => void;
   onStartExport: (settings: ExportSettings) => void;
   onCancelExport: () => void;
+  onPrefsChange?: (prefs: ExportPrefs) => void;
   resultBlob: Blob | null;
-  resultType: 'png-zip' | 'webm-video' | null;
+  resultType: ExportFormat | null;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -22,16 +24,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   progressInfo,
   totalDuration,
   aspectRatio,
+  initialPrefs,
   onClose,
   onStartExport,
   onCancelExport,
+  onPrefsChange,
   resultBlob,
   resultType
 }) => {
-  const [format, setFormat] = useState<'png-zip' | 'webm-video'>('png-zip');
-  const [resolution, setResolution] = useState<'1080p' | '720p'>('1080p');
-  const [fps, setFps] = useState<30 | 60>(30);
+  const [format, setFormat] = useState<ExportFormat>(initialPrefs.format);
+  const [resolution, setResolution] = useState<'1080p' | '720p'>(initialPrefs.resolution);
+  const [fps, setFps] = useState<30 | 60>(initialPrefs.fps);
   const [copiedFfmpeg, setCopiedFfmpeg] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setFormat(initialPrefs.format);
+    setResolution(initialPrefs.resolution);
+    setFps(initialPrefs.fps);
+  }, [isOpen, initialPrefs]);
+
+  useEffect(() => {
+    onPrefsChange?.({ format, resolution, fps });
+  }, [format, resolution, fps, onPrefsChange]);
 
   if (!isOpen) return null;
 
@@ -44,15 +59,29 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     setTimeout(() => setCopiedFfmpeg(false), 2000);
   };
 
+  const downloadName =
+    resultType === 'mp4-wasm'
+      ? 'artlens_video.mp4'
+      : resultType === 'png-zip'
+        ? 'artlens_frames.zip'
+        : 'artlens_video.webm';
+
   const handleManualDownload = () => {
     if (!resultBlob) return;
     const url = URL.createObjectURL(resultBlob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = resultType === 'png-zip' ? 'artlens_frames.zip' : 'artlens_video.webm';
+    a.download = downloadName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+
+  const resultLabel =
+    resultType === 'mp4-wasm'
+      ? '已生成高画质 H.264 MP4（PNG 逐帧 + 页内 ffmpeg.wasm 封装）。'
+      : resultType === 'png-zip'
+        ? '已生成无损 PNG 序列 ZIP 压缩包，共计 ' + totalFrames + ' 帧画面。'
+        : '已生成浏览器录制视频文件，可直接播放或保存。';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
@@ -65,7 +94,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm font-semibold text-zinc-900">导出视频 / 逐帧序列</h2>
-              <p className="text-[11px] text-zinc-400">选择高画质逐帧无损导出或浏览器快速视频</p>
+              <p className="text-[11px] text-zinc-400">
+                推荐：PNG 逐帧 + 页内 ffmpeg.wasm 合成高画质 MP4
+              </p>
             </div>
           </div>
           {!isExporting && (
@@ -90,7 +121,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </span>
               </div>
 
-              {/* Progress bar */}
               <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
                 <div
                   className="h-full bg-zinc-900 transition-all duration-150 ease-out"
@@ -105,7 +135,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <span>时长: {totalDuration.toFixed(1)}s</span>
               </div>
 
-              {/* Real-time frame preview */}
               {progressInfo.previewUrl && (
                 <div className="relative w-full h-36 bg-zinc-900 rounded-lg overflow-hidden border border-zinc-200 flex items-center justify-center">
                   <img
@@ -137,11 +166,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                 <div className="text-xs">
                   <div className="font-semibold text-emerald-900 mb-0.5">导出完成！</div>
-                  <p className="text-emerald-700">
-                    {resultType === 'png-zip'
-                      ? '已生成无损 PNG 序列 ZIP 压缩包，共计 ' + totalFrames + ' 帧画面。'
-                      : '已生成高清视频文件，可直接播放或保存。'}
-                  </p>
+                  <p className="text-emerald-700">{resultLabel}</p>
                 </div>
               </div>
 
@@ -170,7 +195,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     {ffmpegCommand}
                   </pre>
                   <p className="text-[11px] text-zinc-400">
-                    解压 ZIP 包后，在包含 frames 文件夹的目录下执行上述命令，即可获得电影级 1080P MP4 视频。
+                    也可改用「高画质 MP4」方案，由页内 ffmpeg.wasm 自动完成同样的封装。
                   </p>
                 </div>
               )}
@@ -196,53 +221,72 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           {/* Configuration Form (Initial State) */}
           {!isExporting && !resultBlob && (
             <div className="space-y-4">
-              {/* Format selection */}
               <div>
                 <label className="block text-xs font-medium text-zinc-700 mb-2">
                   导出方案选择
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div
-                    onClick={() => setFormat('png-zip')}
+                    onClick={() => setFormat('mp4-wasm')}
                     className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                      format === 'png-zip'
+                      format === 'mp4-wasm'
                         ? 'border-zinc-900 bg-zinc-50/70 ring-1 ring-zinc-900'
                         : 'border-zinc-200 hover:border-zinc-300'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <Layers className="w-4 h-4 text-amber-500" />
+                      <Film className="w-4 h-4 text-amber-500" />
                       <span className="text-xs font-semibold text-zinc-900">
-                        PNG 逐帧序列 (推荐)
+                        高画质 MP4（推荐）
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-medium">
+                        ffmpeg.wasm
                       </span>
                     </div>
                     <p className="text-[11px] text-zinc-500 leading-relaxed">
-                      WebGL 离线精准步进，100% 不丢帧、无压缩伪影，适合 FFmpeg 合成高质感短片。
+                      先离线渲染无损 PNG 序列，再在浏览器内用 ffmpeg.wasm 封装为 H.264 MP4（CRF
+                      18）。首次会下载约 30MB 核心，之后由 Service Worker 缓存。
                     </p>
                   </div>
 
-                  <div
-                    onClick={() => setFormat('webm-video')}
-                    className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                      format === 'webm-video'
-                        ? 'border-zinc-900 bg-zinc-50/70 ring-1 ring-zinc-900'
-                        : 'border-zinc-200 hover:border-zinc-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <Video className="w-4 h-4 text-blue-500" />
-                      <span className="text-xs font-semibold text-zinc-900">
-                        直接录制视频
-                      </span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div
+                      onClick={() => setFormat('png-zip')}
+                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                        format === 'png-zip'
+                          ? 'border-zinc-900 bg-zinc-50/70 ring-1 ring-zinc-900'
+                          : 'border-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Layers className="w-4 h-4 text-zinc-500" />
+                        <span className="text-xs font-semibold text-zinc-900">PNG 序列 ZIP</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        仅导出逐帧 PNG，适合自行用本地 FFmpeg 再处理。
+                      </p>
                     </div>
-                    <p className="text-[11px] text-zinc-500 leading-relaxed">
-                      浏览器直接录制并即刻导出 WebM/MP4 格式视频文件，立即可看。
-                    </p>
+
+                    <div
+                      onClick={() => setFormat('webm-video')}
+                      className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                        format === 'webm-video'
+                          ? 'border-zinc-900 bg-zinc-50/70 ring-1 ring-zinc-900'
+                          : 'border-zinc-200 hover:border-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Video className="w-4 h-4 text-blue-500" />
+                        <span className="text-xs font-semibold text-zinc-900">快速 WebM</span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                        MediaRecorder 浏览器录制，速度快但画质不如 MP4 方案。
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              {/* Resolution & FPS */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-medium text-zinc-700 mb-1.5">
@@ -250,7 +294,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </label>
                   <select
                     value={resolution}
-                    onChange={(e) => setResolution(e.target.value as any)}
+                    onChange={(e) => setResolution(e.target.value as '1080p' | '720p')}
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-zinc-800 focus:outline-hidden focus:ring-1 focus:ring-zinc-900"
                   >
                     {aspectRatio === '3:4' && (
@@ -292,7 +336,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   </label>
                   <select
                     value={fps}
-                    onChange={(e) => setFps(parseInt(e.target.value) as any)}
+                    onChange={(e) => setFps(parseInt(e.target.value, 10) as 30 | 60)}
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-zinc-800 focus:outline-hidden focus:ring-1 focus:ring-zinc-900"
                   >
                     <option value={30}>30 FPS (电影推荐)</option>
@@ -301,7 +345,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </div>
               </div>
 
-              {/* Specs Summary */}
               <div className="p-3 bg-zinc-50 rounded-lg border border-zinc-200 text-xs text-zinc-600 flex items-center justify-between">
                 <span>预计输出总帧数:</span>
                 <span className="font-mono font-semibold text-zinc-900">
@@ -309,7 +352,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                 </span>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-100">
                 <button
                   onClick={onClose}
@@ -329,7 +371,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-zinc-900 text-white hover:bg-zinc-800 transition-colors shadow-xs cursor-pointer"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>开始离线高画质渲染</span>
+                  <span>
+                    {format === 'mp4-wasm'
+                      ? '导出高画质 MP4'
+                      : format === 'png-zip'
+                        ? '导出 PNG 序列'
+                        : '开始快速录制'}
+                  </span>
                 </button>
               </div>
             </div>

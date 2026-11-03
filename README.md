@@ -1,6 +1,6 @@
 # ArtLens（gl-web）
 
-基于 Three.js 与自定义着色器的图片艺术视频生成器：多图电影感特效编排、无损逐帧 PNG 序列及高清 WebM 导出。
+基于 Three.js 与自定义着色器的图片艺术视频生成器：多图电影感特效编排、高画质 MP4（页内 ffmpeg.wasm）、无损 PNG 序列及快速 WebM 导出。
 
 ## GitHub Pages
 
@@ -25,6 +25,28 @@ bun run build
 bun run preview
 ```
 
-## 上传图片持久化
+## 导出（MP4 / PNG / WebM）
 
-用户上传的图片保存在浏览器 **IndexedDB**（库名 `gl-web`，单一 object store `slides`），刷新/重载后仍可恢复；「恢复默认」会清空该存储。不使用 localStorage 存图片 blob。
+1. **高画质 MP4（推荐）**：离线逐帧渲染 PNG → 页内 `@ffmpeg/ffmpeg`（单线程 `@ffmpeg/core`）封装 H.264 MP4（CRF 18、yuv420p、faststart）。首次加载会拉取约 30MB wasm，进度条会显示加载与编码阶段。
+2. **PNG 序列 ZIP**：仅导出逐帧，可本地再用 FFmpeg。
+3. **快速 WebM**：`MediaRecorder` 浏览器录制。
+
+Vite 在 `buildStart` / `configureServer` 时把 `node_modules/@ffmpeg/core/dist/esm/ffmpeg-core.{js,wasm}` 复制到 `public/ffmpeg/`（已 gitignore），运行时 URL 为 `/gl-web/ffmpeg/…`。
+
+## Service Worker（缓存 wasm）
+
+- 文件：`public/sw.js`（随 dist 发布）
+- 注册：`src/main.tsx` 在生产环境以 `scope = import.meta.env.BASE_URL`（`/gl-web/`）注册，兼容 GitHub Pages 子路径
+- 策略：仅对路径匹配 `/ffmpeg/ffmpeg-core.(js|wasm)` 的 GET 请求做 **CacheFirst**（cache 名 `gl-web-ffmpeg-v1`）；其余请求不拦截，避免 stale HTML/JS
+- 验证：DevTools → Application → Cache Storage，首次导出后再开一次应命中缓存
+
+## IndexedDB 持久化
+
+库名 `gl-web`（version 3）：
+
+| Store | Key | 内容 |
+|-------|-----|------|
+| `slides` | slide `id` | 用户上传图片 blob（一份） |
+| `prefs` | `app` | 非密钥 UI 状态：`sidebarWidth`、`aspectRatio`、`sidebarTab`、`shaderSettings`、`timelineSettings`、`exportPrefs` |
+
+刷新后会恢复转场/着色器参数、时间轴、侧栏宽度与导出偏好。「恢复默认」只清空 `slides`。Tokens/secrets 不进 IDB。

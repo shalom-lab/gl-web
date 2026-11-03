@@ -339,6 +339,144 @@ export class RendererEngine {
     this.cancelExportRequested = true;
   }
 
+  // --- High-quality MP4: PNG sequence → ffmpeg.wasm (H.264) ---
+  public async exportMp4ViaFfmpeg(
+    settings: ExportSettings,
+    onProgress: (info: ProgressInfo) => void
+  ): Promise<Blob | null> {
+    this.pause();
+    this.isExporting = true;
+    this.cancelExportRequested = false;
+
+    const totalDuration = this.getTotalDuration();
+    const fps = settings.fps;
+    const totalFrames = Math.max(1, Math.round(totalDuration * fps));
+    const [targetW, targetH] = getExportDimensions(settings.resolution, settings.aspectRatio);
+
+    const {
+      encodePngSequenceToMp4,
+      ensureFfmpegLoaded,
+      terminateFfmpeg,
+      writePngFrame
+    } = await import('../utils/ffmpegMp4');
+
+    let ffmpeg;
+    try {
+      ffmpeg = await ensureFfmpegLoaded((info) => {
+        onProgress({
+          currentFrame: 0,
+          totalFrames,
+          percent: Math.round(info.percent * 0.15),
+          statusText: info.statusText
+        });
+      });
+    } catch (err: any) {
+      this.isExporting = false;
+      throw new Error('ffmpeg.wasm 加载失败: ' + (err?.message || String(err)));
+    }
+
+    if (this.cancelExportRequested) {
+      this.isExporting = false;
+      return null;
+    }
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = targetW;
+    exportCanvas.height = targetH;
+
+    const exportRenderer = new THREE.WebGLRenderer({
+      canvas: exportCanvas,
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: true
+    });
+    exportRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    exportRenderer.setSize(targetW, targetH, false);
+
+    const oldVpAspect = this.material.uniforms.uViewportAspect.value;
+    this.material.uniforms.uViewportAspect.value = targetW / targetH;
+
+    try {
+      for (let frame = 0; frame < totalFrames; frame++) {
+        if (this.cancelExportRequested) {
+          throw new Error('用户取消了导出');
+        }
+
+        const time = frame / fps;
+        this.applyUniformsAtTime(time);
+        exportRenderer.render(this.scene, this.camera);
+
+        const frameBlob = await new Promise<Blob | null>((resolve) => {
+          exportCanvas.toBlob(resolve, 'image/png');
+        });
+        if (!frameBlob) {
+          throw new Error(`第 ${frame + 1} 帧图像编码失败`);
+        }
+
+        await writePngFrame(ffmpeg, frame + 1, frameBlob);
+
+        let previewUrl: string | undefined;
+        if (frame % 5 === 0 || frame === totalFrames - 1) {
+          previewUrl = exportCanvas.toDataURL('image/jpeg', 0.6);
+        }
+
+        // Render phase maps to 15%–75% of overall progress
+        const renderPct = 15 + Math.round(((frame + 1) / totalFrames) * 60);
+        onProgress({
+          currentFrame: frame + 1,
+          totalFrames,
+          percent: renderPct,
+          previewUrl,
+          statusText: `正在渲染 PNG 帧 ${frame + 1} / ${totalFrames}…`
+        });
+
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      if (this.cancelExportRequested) {
+        throw new Error('用户取消了导出');
+      }
+
+      const mp4Blob = await encodePngSequenceToMp4(ffmpeg, {
+        fps,
+        frameCount: totalFrames,
+        shouldCancel: () => this.cancelExportRequested,
+        onProgress: (info) => {
+          onProgress({
+            currentFrame: totalFrames,
+            totalFrames,
+            percent: 75 + Math.round(info.percent * 0.25),
+            statusText: info.statusText
+          });
+        }
+      });
+
+      onProgress({
+        currentFrame: totalFrames,
+        totalFrames,
+        percent: 100,
+        statusText: 'MP4 导出完成'
+      });
+
+      return mp4Blob;
+    } catch (err: any) {
+      if (err?.message === '用户取消了导出') {
+        try {
+          terminateFfmpeg();
+        } catch {
+          /* ignore */
+        }
+        return null;
+      }
+      throw err;
+    } finally {
+      this.material.uniforms.uViewportAspect.value = oldVpAspect;
+      exportRenderer.dispose();
+      this.isExporting = false;
+      this.seek(this.currentTime);
+    }
+  }
+
   // --- Export PNG Sequence with JSZip (逐帧离线高画质渲染导出) ---
   public async exportPngSequence(
     settings: ExportSettings,
